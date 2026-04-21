@@ -2,7 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg: #f3efe7;
+  --bg-soft: #f8f5ef;
+  --surface: rgba(255, 252, 247, 0.78);
+  --surface-strong: rgba(255, 251, 246, 0.94);
+  --line: rgba(41, 58, 63, 0.12);
+  --line-strong: rgba(41, 58, 63, 0.22);
+  --text: #1f2a2e;
+  --muted: #617076;
+  --accent: #0f766e;
+  --accent-strong: #115e59;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --danger: #b45309;
+  --shadow: 0 24px 60px rgba(31, 42, 46, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  color: #111827;
-  background: #f8fafc;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(190, 120, 60, 0.14), transparent 24%),
+    linear-gradient(180deg, #f8f4ed 0%, #f1ece4 42%, #ebe5dc 100%);
+}
+
+body::selection {
+  background: rgba(15, 118, 110, 0.2);
+}
+
+a,
+button,
+input,
+select {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  outline-offset: 2px;
 }
