@@ -1,0 +1,38 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets（例: API キーは .env.example のみコミット）
+.env
+.env.*
+!.env.example
+
+# Python / backend
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Node / Next.js / frontend
+node_modules/
+.next/
+out/
+.turbo
+.vercel
+*.tsbuildinfo
+
+# ローカル SQLite（data/.gitkeep は追跡したまま）
+data/*.sqlite3
+data/*.db
