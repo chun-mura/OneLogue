@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import Task, TimeEntry
 from app.schemas import TaskCreate, TaskRead, TaskUpdate, TimerActionResponse
 from app.services.timer_service import (
+    get_active_task_timer,
     start_task_timer,
     stop_task_timer,
     stop_task_timer_if_running,
@@ -30,6 +31,12 @@ def list_tasks(db: Session = Depends(get_db)) -> list[TaskRead]:
         select(Task).order_by(pending_first, Task.priority.desc(), Task.created_at.desc())
     ).all()
     return [TaskRead.model_validate(task) for task in tasks]
+
+
+@router.get("/active", response_model=TimerActionResponse)
+def get_active_timer(db: Session = Depends(get_db)) -> TimerActionResponse:
+    entry = get_active_task_timer(db)
+    return TimerActionResponse(message="Active timer fetched", active_entry=entry)
 
 
 @router.patch("/{task_id}", response_model=TaskRead)

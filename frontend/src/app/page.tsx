@@ -79,7 +79,14 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    void refreshTasks();
+    void (async () => {
+      try {
+        setError("");
+        await Promise.all([refreshTasks(), syncActiveEntry()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "初期データの取得に失敗しました");
+      }
+    })();
   }, []);
 
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
@@ -97,6 +104,12 @@ export default function HomePage() {
       setLoading(false);
     }
   }
+  async function syncActiveEntry() {
+    const response = await api.getActiveTimer();
+    setActiveEntry(response.active_entry);
+    return response.active_entry;
+  }
+
 
   async function handleStart(taskId: number) {
     setLoading(true);
@@ -106,7 +119,20 @@ export default function HomePage() {
       setActiveEntry(response.active_entry);
       await refreshTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "タイマー開始に失敗しました");
+      const message = err instanceof Error ? err.message : "タイマー開始に失敗しました";
+
+      if (message.includes("Task timer is already running")) {
+        try {
+          await Promise.all([refreshTasks(), syncActiveEntry()]);
+          setError("このタスクのタイマーは既に進行中です。表示を同期しました。");
+          return;
+        } catch {
+          setError("タイマーは既に進行中ですが、状態の再同期に失敗しました");
+          return;
+        }
+      }
+
+      setError(message);
     } finally {
       setLoading(false);
     }

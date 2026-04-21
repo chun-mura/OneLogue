@@ -7,6 +7,14 @@ from sqlalchemy.orm import Session
 from app.models import Task, TimeEntry
 
 
+def get_active_task_timer(db: Session) -> TimeEntry | None:
+    return db.scalar(
+        select(TimeEntry)
+        .where(TimeEntry.end_time.is_(None))
+        .order_by(TimeEntry.start_time.desc())
+    )
+
+
 def start_task_timer(db: Session, task_id: int) -> TimeEntry:
     task = db.get(Task, task_id)
     if task is None:

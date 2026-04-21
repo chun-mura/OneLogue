@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.database import Base
 from app.models import Task, TimeEntry
 from app.services.timer_service import (
+    get_active_task_timer,
     start_task_timer,
     stop_task_timer,
     stop_task_timer_if_running,
@@ -104,3 +105,22 @@ def test_stop_task_timer_if_running_closes_open_entry() -> None:
     db.commit()
     db.refresh(entry)
     assert entry.end_time is not None
+
+
+def test_get_active_task_timer_returns_latest_open_entry() -> None:
+    db = _create_test_db()
+    task_a = Task(title="A", category="Work", priority=3, status="pending")
+    task_b = Task(title="B", category="Work", priority=2, status="pending")
+    db.add_all([task_a, task_b])
+    db.commit()
+    db.refresh(task_a)
+    db.refresh(task_b)
+
+    start_task_timer(db, task_a.id)
+    latest = start_task_timer(db, task_b.id)
+
+    active_entry = get_active_task_timer(db)
+
+    assert active_entry is not None
+    assert active_entry.id == latest.id
+    assert active_entry.task_id == task_b.id

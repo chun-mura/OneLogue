@@ -54,6 +54,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   listTasks: () => request<Task[]>("/tasks"),
+  getActiveTimer: () =>
+    request<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
   createTask: (payload: Omit<Task, "id" | "created_at">) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(payload) }),
   updateTask: (taskId: number, payload: Partial<Omit<Task, "id" | "created_at">>) =>
