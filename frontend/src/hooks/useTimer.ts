@@ -10,7 +10,7 @@ function parseInstantMs(iso: string): number {
 }
 
 export function useTimer(startTime: string | null): number {
-  const [now, setNow] = useState<number>(Date.now());
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
     if (!startTime) {
@@ -23,7 +23,7 @@ export function useTimer(startTime: string | null): number {
   }, [startTime]);
 
   return useMemo(() => {
-    if (!startTime) {
+    if (!startTime || now === null) {
       return 0;
     }
     const startMs = parseInstantMs(startTime);

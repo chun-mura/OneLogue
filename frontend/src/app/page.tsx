@@ -43,12 +43,17 @@ function formatDueAt(dueAt: string | null): string {
   const date = new Date(dueAt);
   const dateLabel = date.toLocaleDateString("ja-JP", {
     month: "numeric",
-    day: "numeric"
+    day: "numeric",
+    timeZone: "Asia/Tokyo"
   });
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  if (hours === "00" && minutes === "00") return dateLabel;
-  return `${dateLabel} ${hours}:${minutes}`;
+  const timeLabel = date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Tokyo"
+  });
+  if (timeLabel === "00:00") return dateLabel;
+  return `${dateLabel} ${timeLabel}`;
 }
 
 function formatMonthLabel(baseDate: Date): string {
@@ -60,7 +65,8 @@ function formatStartTime(value: string): string {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: "Asia/Tokyo"
   });
 }
 
@@ -362,12 +368,10 @@ function IconChevronRight() {
 
 function SectionHeader({
   title,
-  count,
-  tone
+  count
 }: {
   title: string;
   count: number;
-  tone?: "danger" | "default";
 }) {
   return (
     <div className="mb-2 flex items-center gap-3 px-1">
@@ -404,7 +408,6 @@ function TaskRow({
   onEditCategoryStart,
   onEditCategoryChange,
   onEditCategoryCommit,
-  onEditCategoryCancel,
   onToggleComplete,
   onDelete
 }: {
@@ -429,7 +432,6 @@ function TaskRow({
   onEditCategoryStart: () => void;
   onEditCategoryChange: (value: string) => void;
   onEditCategoryCommit: (value?: string) => void;
-  onEditCategoryCancel: () => void;
   onToggleComplete: () => void;
   onDelete?: () => void;
 }) {
@@ -630,6 +632,7 @@ export default function HomePage() {
   const [duePickerMode, setDuePickerMode] = useState<DuePickerMode>("create");
   const [duePickerPosition, setDuePickerPosition] = useState<DuePickerPosition | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [clientNowIso, setClientNowIso] = useState<string | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -728,6 +731,10 @@ export default function HomePage() {
         setError(err instanceof Error ? err.message : "初期データの取得に失敗しました");
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    setClientNowIso(new Date().toISOString());
   }, []);
 
   useEffect(() => {
@@ -1170,6 +1177,7 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {false && (
       <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] px-5 py-5 shadow-[var(--shadow)] sm:px-7 sm:py-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1288,15 +1296,15 @@ export default function HomePage() {
             </div>
           </div>
 
-          {duePickerOpen ? (
+        {duePickerOpen ? (
             <div
               ref={duePickerRef}
               className={`z-30 w-full max-w-[380px] rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 shadow-[var(--shadow)] ${
                 duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
               }`}
               style={
-                duePickerMode === "task" && duePickerPosition
-                  ? { top: duePickerPosition.top, left: duePickerPosition.left }
+                duePickerMode === "task"
+                  ? { top: duePickerPosition?.top, left: duePickerPosition?.left }
                   : undefined
               }
             >
@@ -1500,11 +1508,541 @@ export default function HomePage() {
             </div>
           ) : null}
         </form>
+        <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+          <div className="flex flex-wrap items-center gap-2 md:shrink-0">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("all")}
+            >
+              すべて
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("today")}
+            >
+              今日
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("next7days")}
+            >
+              7日以内
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:ml-auto md:flex-row md:flex-wrap md:items-center">
+            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-[color:var(--muted)] sm:shrink-0">
+              {pendingCount} 件
+            </div>
+            <div className="relative w-full sm:w-auto">
+              <button
+                ref={taskSortTriggerRef}
+                type="button"
+                onClick={() => setTaskSortMenuOpen((open) => !open)}
+                className={`inline-flex w-full items-center justify-between gap-1 rounded-full border px-3 py-2 text-sm font-medium sm:w-auto ${
+                  taskSortMenuOpen
+                    ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                    : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
+                }`}
+                aria-haspopup="menu"
+                aria-expanded={taskSortMenuOpen}
+              >
+                <span>
+                  {taskSort === "dueAsc"
+                    ? "期限が近い順"
+                    : taskSort === "dueDesc"
+                      ? "期限が遠い順"
+                      : taskSort === "createdDesc"
+                        ? "新しい順"
+                        : taskSort === "createdAsc"
+                          ? "古い順"
+                          : "名前順"}
+                </span>
+                <span className="text-[color:var(--muted)]">
+                  <IconChevronRight />
+                </span>
+              </button>
+
+              {taskSortMenuOpen ? (
+                <div
+                  ref={taskSortMenuRef}
+                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                >
+                  {[
+                    ["dueAsc", "期限が近い順"],
+                    ["dueDesc", "期限が遠い順"],
+                    ["createdDesc", "新しい順"],
+                    ["createdAsc", "古い順"],
+                    ["titleAsc", "名前順"]
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                        taskSort === value ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                      } hover:bg-white/6`}
+                      onClick={() => {
+                        setTaskSort(value as TaskSort);
+                        setTaskSortMenuOpen(false);
+                      }}
+                    >
+                      <span>{label}</span>
+                      {taskSort === value ? <IconCheck /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="relative w-full sm:w-auto">
+              <button
+                ref={categoryFilterTriggerRef}
+                type="button"
+                onClick={() => setCategoryFilterMenuOpen((open) => !open)}
+                className={`inline-flex w-full items-center justify-between gap-1 rounded-full border px-3 py-2 text-sm font-medium sm:w-auto ${
+                  categoryFilterMenuOpen
+                    ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                    : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
+                }`}
+                aria-haspopup="menu"
+                aria-expanded={categoryFilterMenuOpen}
+              >
+                <span>{categoryFilter === "all" ? "全カテゴリ" : categoryFilter}</span>
+                <span className="text-[color:var(--muted)]">
+                  <IconChevronRight />
+                </span>
+              </button>
+
+              {categoryFilterMenuOpen ? (
+                <div
+                  ref={categoryFilterMenuRef}
+                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                >
+                  <button
+                    type="button"
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                      categoryFilter === "all" ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                    } hover:bg-white/6`}
+                    onClick={() => {
+                      setCategoryFilter("all");
+                      setCategoryFilterMenuOpen(false);
+                    }}
+                  >
+                    <span>全カテゴリ</span>
+                    {categoryFilter === "all" ? <IconCheck /> : null}
+                  </button>
+                  {categories.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                        categoryFilter === category.name ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                      } hover:bg-white/6`}
+                      onClick={() => {
+                        setCategoryFilter(category.name);
+                        setCategoryFilterMenuOpen(false);
+                      }}
+                    >
+                      <span>{category.name}</span>
+                      {categoryFilter === category.name ? <IconCheck /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
 
         {error ? (
           <p className="mt-4 rounded-[18px] bg-[color:var(--danger-soft)] px-4 py-3 text-sm text-[color:var(--danger)]">{error}</p>
         ) : null}
+      </section>
+      )}
 
+      <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
+        <p className="text-sm text-[color:var(--muted)]">進行中</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">
+          {activeTask ? activeTask.title : "待機中"}
+        </h2>
+        <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
+          {formatSeconds(elapsedSeconds)}
+        </p>
+        <div className="mt-4 h-2 rounded-full bg-white/8">
+          <div
+            className="h-full rounded-full bg-[linear-gradient(90deg,#4f7cff,#86a7ff)]"
+            style={{ width: activeTask ? `${Math.min(100, (elapsedSeconds / 7200) * 100)}%` : "0%" }}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
+            {activeTask ? activeTask.category : "カテゴリ未選択"}
+          </span>
+          <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
+            {activeTask ? formatDueAt(activeTask.due_at) : "期限未設定"}
+          </span>
+        </div>
+        {activeEntry ? (
+          <div className="mt-5 space-y-3">
+            <p className="text-sm text-[color:var(--muted)]">開始 {formatStartTime(activeEntry.start_time)}</p>
+            {editingActiveStartTime ? (
+              <div className="space-y-2">
+                <input
+                  type="datetime-local"
+                  value={activeStartTimeInput}
+                  max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
+                  onChange={(event) => setActiveStartTimeInput(event.target.value)}
+                  className="w-full rounded-[18px] border border-[color:var(--line)] bg-white/5 px-4 py-3 text-sm text-[color:var(--text)] focus:outline-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white"
+                    onClick={() => void handleUpdateActiveStartTime()}
+                  >
+                    保存
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)]"
+                    onClick={() => setEditingActiveStartTime(false)}
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+                  onClick={() => setEditingActiveStartTime(true)}
+                >
+                  開始時刻を修正
+                </button>
+                {activeTask ? (
+                  <button
+                    type="button"
+                    className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+                    onClick={() => void handleStop(activeTask.id)}
+                  >
+                    停止
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-5 text-sm leading-6 text-[color:var(--muted)]">
+            タスクを開始すると、ここに実行中の情報が表示されます。
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[color:var(--muted)]">タスク追加</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">今日のタスク</h2>
+          </div>
+        </div>
+        <form className="relative mt-5" onSubmit={handleCreateTask}>
+          <div className="rounded-[20px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-2">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[16px] px-3 py-2.5">
+                <span className="text-[color:var(--muted)]">
+                  <IconPlus />
+                </span>
+                <input
+                  value={form.title}
+                  onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="タスクを追加する"
+                  className="min-w-0 flex-1 bg-transparent text-[17px] text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <button
+                    ref={createCategoryTriggerRef}
+                    type="button"
+                    disabled={categories.length === 0}
+                    onClick={() => setCreateCategoryMenuOpen((open) => !open)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${
+                      createCategoryMenuOpen
+                        ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                        : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    <span>{categories.length === 0 ? "カテゴリ未設定" : form.category}</span>
+                    <span className="text-[color:var(--muted)]">
+                      <IconChevronRight />
+                    </span>
+                  </button>
+
+                  {createCategoryMenuOpen && categories.length > 0 ? (
+                    <div
+                      ref={createCategoryMenuRef}
+                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                    >
+                      {categories.map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                            form.category === category.name ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                          } hover:bg-white/6`}
+                          onClick={() => {
+                            setForm((prev) => ({ ...prev, category: category.name }));
+                            setCreateCategoryMenuOpen(false);
+                          }}
+                        >
+                          <span>{category.name}</span>
+                          {form.category === category.name ? <IconCheck /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <button
+                  ref={dueTriggerRef}
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] hover:bg-white/10"
+                  onClick={openCreateDuePicker}
+                >
+                  <IconCalendar />
+                  <span>
+                    {form.due_at
+                      ? formatDueAt(combineDueDateTime(form.due_at, form.due_time))
+                      : "期限"}
+                  </span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={loading || categories.length === 0 || !form.title}
+                  className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)] disabled:opacity-50"
+                >
+                  追加
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {duePickerOpen ? (
+            <div
+              ref={duePickerRef}
+              className={`z-30 w-full max-w-[380px] rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 shadow-[var(--shadow)] ${
+                duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
+              }`}
+              style={
+                duePickerMode === "task"
+                  ? { top: duePickerPosition?.top, left: duePickerPosition?.left }
+                  : undefined
+              }
+            >
+              <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-white/5 p-1">
+                <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-[color:var(--text)]">
+                  期日
+                </button>
+                <button type="button" className="rounded-[12px] px-4 py-2.5 text-sm font-medium text-[color:var(--muted)]">
+                  期間
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-4 gap-2 text-[color:var(--text)]">
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString())}
+                >
+                  <span className="text-[color:var(--muted)]">
+                    <IconSpark />
+                  </span>
+                  <span>今日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString(1))}
+                >
+                  <span className="text-[color:var(--muted)]">
+                    <IconIdea />
+                  </span>
+                  <span>明日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString(7))}
+                >
+                  <span className="text-[color:var(--muted)]">
+                    <IconCalendar />
+                  </span>
+                  <span>+7日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={clearCurrentDue}
+                >
+                  <span className="text-[color:var(--muted)]">
+                    <IconClock />
+                  </span>
+                  <span>なし</span>
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-[15px] font-medium tracking-[-0.02em] text-[color:var(--text)]">
+                  {formatMonthLabel(calendarMonth)}
+                </p>
+                <div className="flex items-center gap-1 text-[color:var(--muted)]">
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
+                    onClick={() =>
+                      setCalendarMonth(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                      )
+                    }
+                  >
+                    <IconChevronLeft />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
+                    onClick={() =>
+                      setCalendarMonth(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                      )
+                    }
+                  >
+                    <IconChevronRight />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-7 gap-y-2 text-center text-xs text-[color:var(--muted)]">
+                {weekLabels.map((label) => (
+                  <div key={label}>{label}</div>
+                ))}
+              </div>
+
+              <div className="mt-3 grid grid-cols-7 gap-y-1 text-center">
+                {calendarDays.map((day) => {
+                  const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                  const isSelected = selectedDue ? isSameDate(day, selectedDue) : false;
+                  const isCurrentDay = isSameDate(day, new Date());
+
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      type="button"
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-[14px] transition ${
+                        isSelected
+                          ? "bg-[color:var(--accent)] text-white"
+                          : isCurrentDay
+                          ? "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]"
+                          : isCurrentMonth
+                              ? "text-[color:var(--text)] hover:bg-white/8"
+                              : "text-[color:var(--muted)] hover:bg-white/6"
+                      }`}
+                      onClick={() => setCurrentDueDate(toDateKey(day))}
+                    >
+                      {day.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 space-y-2 border-t border-white/8 pt-4 text-[color:var(--text)]">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-[18px] px-1 py-1.5 text-left hover:bg-white/4"
+                  onClick={() => setTimePickerOpen((open) => !open)}
+                >
+                  <span className="inline-flex items-center gap-2 text-sm">
+                    <IconClock />
+                    時刻
+                  </span>
+                  <span className="inline-flex items-center gap-2 text-sm text-[color:var(--muted)]">
+                    {currentDueTime || "未設定"}
+                    <IconChevronRight />
+                  </span>
+                </button>
+                {timePickerOpen ? (
+                  <div className="rounded-[18px] border border-[color:var(--line)] bg-white/4 py-2">
+                    <div className="max-h-56 overflow-y-auto">
+                      <button
+                        type="button"
+                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
+                          currentDueTime === "" ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                        }`}
+                        onClick={() => setCurrentDueTime("")}
+                      >
+                        <span>時刻なし</span>
+                        {currentDueTime === "" ? <IconCheck /> : null}
+                      </button>
+                      {dueTimeOptions.map((time) => (
+                        <button
+                          key={time}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
+                            currentDueTime === time ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                          }`}
+                          onClick={() => setCurrentDueTime(time)}
+                        >
+                          <span>{time}</span>
+                          {currentDueTime === time ? <IconCheck /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="flex items-center justify-between rounded-[18px] px-1 py-1.5">
+                  <span className="inline-flex items-center gap-2 text-sm">
+                    <IconSpark />
+                    リマインダー
+                  </span>
+                  <span className="inline-flex items-center gap-2 text-sm text-[color:var(--muted)]">
+                    未設定
+                    <IconChevronRight />
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-between gap-3">
+                <button
+                  type="button"
+                  className="rounded-[16px] border border-[color:var(--line)] px-5 py-2.5 text-sm font-medium text-[color:var(--text)] hover:bg-white/6"
+                  onClick={clearCurrentDue}
+                >
+                  クリア
+                </button>
+                <button
+                  type="button"
+                  className="rounded-[16px] bg-[color:var(--accent)] px-7 py-2.5 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+                  onClick={() => {
+                    if (duePickerMode === "task") {
+                      const task = tasks.find((item) => item.id === editingDueTaskId);
+                      if (task) {
+                        void handleSaveTaskDue(task);
+                        return;
+                      }
+                    }
+                    setDuePickerOpen(false);
+                    setTimePickerOpen(false);
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </form>
         <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
           <div className="flex flex-wrap items-center gap-2 md:shrink-0">
             <button
@@ -1653,11 +2191,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-        <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-3 shadow-[var(--shadow)] sm:p-4">
+      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-3 shadow-[var(--shadow)] sm:p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-[color:var(--muted)]">タスク一覧</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">タスクを整理する</h2>
+          </div>
+        </div>
           {groupedTasks.overdue.length > 0 ? (
             <div className="mb-3">
-              <SectionHeader title="遅延" count={groupedTasks.overdue.length} tone="danger" />
+              <SectionHeader title="遅延" count={groupedTasks.overdue.length} />
               <ul className="divide-y divide-white/[0.03]">
                 {groupedTasks.overdue.map((task) => (
                   <li key={task.id}>
@@ -1692,10 +2235,6 @@ export default function HomePage() {
                       }}
                       onEditCategoryChange={setEditingCategoryValue}
                       onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onEditCategoryCancel={() => {
-                        setEditingCategoryTaskId(null);
-                        setEditingCategoryValue("");
-                      }}
                       onToggleComplete={() => void handleComplete(task.id)}
                     />
                   </li>
@@ -1743,10 +2282,6 @@ export default function HomePage() {
                       }}
                       onEditCategoryChange={setEditingCategoryValue}
                       onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onEditCategoryCancel={() => {
-                        setEditingCategoryTaskId(null);
-                        setEditingCategoryValue("");
-                      }}
                       onToggleComplete={() => void handleComplete(task.id)}
                     />
                   </li>
@@ -1794,10 +2329,6 @@ export default function HomePage() {
                       }}
                       onEditCategoryChange={setEditingCategoryValue}
                       onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onEditCategoryCancel={() => {
-                        setEditingCategoryTaskId(null);
-                        setEditingCategoryValue("");
-                      }}
                       onToggleComplete={() => void handleComplete(task.id)}
                     />
                   </li>
@@ -1845,10 +2376,6 @@ export default function HomePage() {
                       }}
                       onEditCategoryChange={setEditingCategoryValue}
                       onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onEditCategoryCancel={() => {
-                        setEditingCategoryTaskId(null);
-                        setEditingCategoryValue("");
-                      }}
                       onToggleComplete={() => void handleReopen(task.id)}
                       onDelete={() => setDeleteConfirmTask(task)}
                     />
@@ -1859,105 +2386,23 @@ export default function HomePage() {
           </div>
         </section>
 
-        <aside className="space-y-4">
-          <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
-            <p className="text-sm text-[color:var(--muted)]">進行中</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">
-              {activeTask ? activeTask.title : "待機中"}
-            </h2>
-            <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
-              {formatSeconds(elapsedSeconds)}
-            </p>
-            <div className="mt-4 h-2 rounded-full bg-white/8">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,#4f7cff,#86a7ff)]"
-                style={{ width: activeTask ? `${Math.min(100, (elapsedSeconds / 7200) * 100)}%` : "0%" }}
-              />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
-                {activeTask ? activeTask.category : "カテゴリ未選択"}
-              </span>
-              <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
-                {activeTask ? formatDueAt(activeTask.due_at) : "期限未設定"}
-              </span>
-            </div>
-            {activeEntry ? (
-              <div className="mt-5 space-y-3">
-                <p className="text-sm text-[color:var(--muted)]">開始 {formatStartTime(activeEntry.start_time)}</p>
-                {editingActiveStartTime ? (
-                  <div className="space-y-2">
-                    <input
-                      type="datetime-local"
-                      value={activeStartTimeInput}
-                      max={toDateTimeLocalValue(new Date().toISOString())}
-                      onChange={(event) => setActiveStartTimeInput(event.target.value)}
-                      className="w-full rounded-[18px] border border-[color:var(--line)] bg-white/5 px-4 py-3 text-sm text-[color:var(--text)] focus:outline-none"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white"
-                        onClick={() => void handleUpdateActiveStartTime()}
-                      >
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)]"
-                        onClick={() => setEditingActiveStartTime(false)}
-                      >
-                        キャンセル
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
-                      onClick={() => setEditingActiveStartTime(true)}
-                    >
-                      開始時刻を修正
-                    </button>
-                    {activeTask ? (
-                      <button
-                        type="button"
-                        className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
-                        onClick={() => void handleStop(activeTask.id)}
-                      >
-                        停止
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="mt-5 text-sm leading-6 text-[color:var(--muted)]">
-                タスクを開始すると、ここに実行中の情報が表示されます。
-              </p>
-            )}
-          </section>
-
-          <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
-            <p className="text-sm text-[color:var(--muted)]">サマリー</p>
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-[color:var(--muted)]">未完了</span>
-                <span className="text-lg font-semibold text-[color:var(--text)]">{filteredPendingTasks.length}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-[color:var(--muted)]">完了</span>
-                <span className="text-lg font-semibold text-[color:var(--text)]">{groupedTasks.completed.length}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-[color:var(--muted)]">期限超過</span>
-                <span className="text-lg font-semibold text-[color:var(--danger)]">{groupedTasks.overdue.length}</span>
-              </div>
-            </div>
-          </section>
-        </aside>
-      </div>
+      <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
+        <p className="text-sm text-[color:var(--muted)]">サマリー</p>
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+            <span className="text-sm text-[color:var(--muted)]">未完了</span>
+            <span className="text-lg font-semibold text-[color:var(--text)]">{filteredPendingTasks.length}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+            <span className="text-sm text-[color:var(--muted)]">完了</span>
+            <span className="text-lg font-semibold text-[color:var(--text)]">{groupedTasks.completed.length}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+            <span className="text-sm text-[color:var(--muted)]">期限超過</span>
+            <span className="text-lg font-semibold text-[color:var(--danger)]">{groupedTasks.overdue.length}</span>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -183,7 +183,10 @@ export default function CategoriesPage() {
                 <div>
                   <p className="text-lg font-semibold text-[color:var(--text)]">{category.name}</p>
                   <p className="mt-1 text-sm text-[color:var(--muted)]">
-                    登録日 {new Date(category.created_at).toLocaleDateString("ja-JP")}
+                    登録日{" "}
+                    {new Date(category.created_at).toLocaleDateString("ja-JP", {
+                      timeZone: "Asia/Tokyo"
+                    })}
                   </p>
                 </div>
                 <button

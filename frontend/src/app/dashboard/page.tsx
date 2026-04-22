@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api, SummaryItem } from "@/lib/api";
@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [toDate, setToDate] = useState<string>("");
   const [items, setItems] = useState<SummaryItem[]>([]);
   const [error, setError] = useState<string>("");
+  const [isMounted, setIsMounted] = useState(false);
 
   const totalSeconds = useMemo(
     () => items.reduce((acc, item) => acc + item.total_seconds, 0),
@@ -33,6 +34,10 @@ export default function DashboardPage() {
       ),
     [items]
   );
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   async function fetchSummary() {
     setError("");
@@ -132,7 +137,11 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-8 h-80 rounded-[30px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4">
-          {items.length === 0 ? (
+          {!isMounted ? (
+            <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-[color:var(--line-strong)] text-sm text-[color:var(--muted)]">
+              グラフを準備しています
+            </div>
+          ) : items.length === 0 ? (
             <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-[color:var(--line-strong)] text-sm text-[color:var(--muted)]">
               期間を選んで集計するとグラフが表示されます
             </div>

@@ -22,7 +22,8 @@ function formatDateTime(value: string | null): string {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: "Asia/Tokyo"
   });
 }
 
@@ -55,6 +56,7 @@ export default function TimeEntriesPage() {
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
+  const [clientNowIso, setClientNowIso] = useState<string | null>(null);
 
   async function refreshEntries() {
     const data = await api.listTimeEntries();
@@ -70,6 +72,10 @@ export default function TimeEntriesPage() {
         setError(err instanceof Error ? err.message : "時間一覧の取得に失敗しました");
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    setClientNowIso(new Date().toISOString());
   }, []);
 
   const summary = useMemo(() => {
@@ -159,6 +165,7 @@ export default function TimeEntriesPage() {
             entries.map((entry) => {
               const isEditing = editingEntryId === entry.id;
               const isRunning = entry.end_time === null;
+              const durationEnd = entry.end_time ?? clientNowIso ?? entry.start_time;
 
               return (
                 <article
@@ -175,7 +182,7 @@ export default function TimeEntriesPage() {
                           {statusLabel(entry.task_status)}
                         </span>
                         <span className="rounded-full bg-amber-500/12 px-3 py-1 text-xs font-semibold text-amber-300">
-                          {formatDuration(entry.start_time, entry.end_time)}
+                          {formatDuration(entry.start_time, durationEnd)}
                         </span>
                         {isRunning ? (
                           <span className="rounded-full bg-emerald-500/16 px-3 py-1 text-xs font-semibold text-emerald-300">
@@ -196,7 +203,7 @@ export default function TimeEntriesPage() {
                               type="datetime-local"
                               className="w-full rounded-[20px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
                               value={startInput}
-                              max={toDateTimeLocalValue(new Date().toISOString())}
+                              max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
                               onChange={(event) => setStartInput(event.target.value)}
                             />
                           </label>
@@ -207,7 +214,7 @@ export default function TimeEntriesPage() {
                               className="w-full rounded-[20px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
                               value={endInput}
                               disabled={isRunning}
-                              max={toDateTimeLocalValue(new Date().toISOString())}
+                              max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
                               onChange={(event) => setEndInput(event.target.value)}
                             />
                           </label>

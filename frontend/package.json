@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "next": "15.3.1",
@@ -15,10 +15,16 @@
     "recharts": "2.15.1"
   },
   "devDependencies": {
+    "@next/eslint-plugin-next": "^16.2.4",
     "@types/node": "22.15.2",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
     "autoprefixer": "10.4.21",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "postcss": "8.5.3",
     "tailwindcss": "3.4.17",
     "typescript": "5.8.3"
