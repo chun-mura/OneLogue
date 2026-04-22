@@ -59,13 +59,13 @@ def test_registered_category_can_be_used_for_task_creation() -> None:
             json={
                 "title": "実装する",
                 "category": "開発",
-                "due_at": "2026-05-01",
+                "due_at": "2026-05-01T14:00:00Z",
                 "status": "pending",
             },
         )
         assert task_response.status_code == 201
         assert task_response.json()["category"] == "開発"
-        assert task_response.json()["due_at"] == "2026-05-01"
+        assert task_response.json()["due_at"].startswith("2026-05-01T14:00:00")
     finally:
         app.dependency_overrides.clear()
 

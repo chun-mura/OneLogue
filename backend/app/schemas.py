@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -32,8 +32,25 @@ class CategoryRead(CategoryBase):
 class TaskBase(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     category: str = Field(min_length=1, max_length=100)
-    due_at: date | None = None
+    due_at: datetime | None = None
     status: TaskStatus = "pending"
+
+    @field_validator("due_at", mode="before")
+    @classmethod
+    def _coerce_due_datetime(cls, v: object) -> object:
+        if v in (None, ""):
+            return None
+        if isinstance(v, datetime):
+            return v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+        if isinstance(v, date):
+            return datetime.combine(v, time.min, tzinfo=timezone.utc)
+        if isinstance(v, str):
+            if "T" in v:
+                parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            parsed_date = date.fromisoformat(v)
+            return datetime.combine(parsed_date, time.min, tzinfo=timezone.utc)
+        return v
 
 
 class TaskCreate(TaskBase):
@@ -43,8 +60,25 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = Field(default=None, min_length=1, max_length=100)
-    due_at: date | None = None
+    due_at: datetime | None = None
     status: TaskStatus | None = None
+
+    @field_validator("due_at", mode="before")
+    @classmethod
+    def _coerce_due_datetime(cls, v: object) -> object:
+        if v in (None, ""):
+            return None
+        if isinstance(v, datetime):
+            return v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+        if isinstance(v, date):
+            return datetime.combine(v, time.min, tzinfo=timezone.utc)
+        if isinstance(v, str):
+            if "T" in v:
+                parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            parsed_date = date.fromisoformat(v)
+            return datetime.combine(parsed_date, time.min, tzinfo=timezone.utc)
+        return v
 
 
 class TaskRead(TaskBase):
@@ -62,11 +96,17 @@ class TaskRead(TaskBase):
 
     @field_validator("due_at", mode="before")
     @classmethod
-    def _coerce_due_date(cls, v: object) -> object:
+    def _coerce_due_datetime(cls, v: object) -> object:
         if isinstance(v, datetime):
-            return v.date()
-        if isinstance(v, str) and "T" in v:
-            return datetime.fromisoformat(v.replace("Z", "+00:00")).date()
+            return v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+        if isinstance(v, date):
+            return datetime.combine(v, time.min, tzinfo=timezone.utc)
+        if isinstance(v, str):
+            if "T" in v:
+                parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            parsed_date = date.fromisoformat(v)
+            return datetime.combine(parsed_date, time.min, tzinfo=timezone.utc)
         return v
 
 
