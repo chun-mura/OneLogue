@@ -158,10 +158,14 @@ function statusLabel(status: TaskStatus): string {
 }
 
 function dueChipTone(task: Task): string {
-  if (!task.due_at) return "bg-white/6 text-zinc-400";
-  if (isOverdue(task.due_at) && task.status === "pending") return "bg-[#4c241f] text-[#ff7f73]";
-  if (isToday(task.due_at)) return "bg-[#3a2c18] text-[#f1b35f]";
-  return "bg-[#202d52] text-[#8eb0ff]";
+  if (!task.due_at) return "bg-white/6 text-[color:var(--muted)]";
+  if (isOverdue(task.due_at) && task.status === "pending") {
+    return "bg-[color:var(--danger-soft)] text-[color:var(--danger)]";
+  }
+  if (isToday(task.due_at)) {
+    return "bg-[color:var(--warning-soft)] text-[color:var(--warning)]";
+  }
+  return "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]";
 }
 
 function compareTasks(a: Task, b: Task, sort: TaskSort): number {
@@ -367,13 +371,13 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-2 flex items-center gap-3 px-1">
-      <span className="text-zinc-500">
+      <span className="text-[color:var(--muted)]">
         <IconChevronDown />
       </span>
-      <span className={`text-[15px] font-semibold ${tone === "danger" ? "text-zinc-100" : "text-zinc-100"}`}>
+      <span className="text-[15px] font-semibold text-[color:var(--text)]">
         {title}
       </span>
-      <span className="text-sm text-zinc-500">{count}</span>
+      <span className="text-sm text-[color:var(--muted)]">{count}</span>
     </div>
   );
 }
@@ -431,7 +435,7 @@ function TaskRow({
 }) {
   return (
     <div
-      className={`group flex items-center gap-4 rounded-[20px] border border-transparent px-4 py-3.5 text-zinc-100 transition ${
+      className={`group flex items-center gap-4 rounded-[20px] border border-transparent px-4 py-3.5 text-[color:var(--text)] transition ${
         isAnimatingComplete
           ? "scale-[0.992] bg-emerald-500/[0.08]"
           : isActive
@@ -447,7 +451,7 @@ function TaskRow({
         }}
         className={`relative flex h-7 w-7 items-center justify-center rounded-[10px] border transition duration-200 ${
           task.status === "completed"
-            ? "border-white/0 bg-white/10 text-zinc-500"
+            ? "border-white/0 bg-white/10 text-[color:var(--muted)]"
             : "border-white/20 bg-transparent text-transparent hover:scale-105 hover:border-[color:var(--accent-strong)] hover:bg-[color:var(--accent-soft)]"
         }`}
         aria-label={task.status === "completed" ? "未完了に戻す" : "完了にする"}
@@ -479,7 +483,7 @@ function TaskRow({
                   onEditTitleCancel();
                 }
               }}
-              className="min-w-0 flex-1 appearance-none rounded-[12px] border border-white/10 bg-[#1f1f1f] px-3 py-2 text-[16px] text-zinc-100 focus:outline-none"
+              className="min-w-0 flex-1 appearance-none rounded-[12px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2 text-[16px] text-[color:var(--text)] focus:outline-none"
               aria-label="タスクタイトルを編集"
             />
           ) : (
@@ -487,14 +491,14 @@ function TaskRow({
               type="button"
               onClick={onEditTitleStart}
               className={`truncate text-left text-[16px] transition hover:opacity-80 ${
-                task.status === "completed" ? "text-zinc-500 line-through" : "text-zinc-100"
+                task.status === "completed" ? "text-[color:var(--muted)] line-through" : "text-[color:var(--text)]"
               }`}
             >
               {task.title}
             </button>
           )}
           {isActive ? (
-            <span className="rounded-full bg-emerald-500/18 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+            <span className="rounded-full bg-emerald-500/18 px-2.5 py-1 text-[11px] font-semibold text-[color:var(--success)]">
               実行中
             </span>
           ) : null}
@@ -516,13 +520,13 @@ function TaskRow({
               onClick={onEditCategoryStart}
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${
                 isEditingCategory
-                  ? "border-white/12 bg-white/8 text-zinc-200"
-                  : "border-white/[0.06] bg-white/[0.04] text-zinc-400 hover:border-white/10 hover:bg-white/[0.06]"
+                  ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                  : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
               }`}
               aria-label={`${task.category}カテゴリを編集`}
             >
               <span>{isEditingCategory ? editingCategoryValue : task.category}</span>
-              <span className="text-zinc-600">
+              <span className="text-[color:var(--muted)]">
                 <IconChevronRight />
               </span>
             </button>
@@ -530,14 +534,14 @@ function TaskRow({
             {isEditingCategory ? (
               <div
                 ref={categoryMenuRef}
-                className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-white/10 bg-[#262626] py-2 shadow-[0_18px_40px_rgba(0,0,0,0.34)]"
+                className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
               >
                 {categoryOptions.map((category) => (
                   <button
                     key={category}
                     type="button"
                     className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                      editingCategoryValue === category ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                      editingCategoryValue === category ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
                     } hover:bg-white/6`}
                     onClick={() => {
                       onEditCategoryChange(category);
@@ -551,7 +555,7 @@ function TaskRow({
               </div>
             ) : null}
           </div>
-          <span className="text-zinc-500">{statusLabel(task.status)}</span>
+          <span className="text-[color:var(--muted)]">{statusLabel(task.status)}</span>
         </div>
       </div>
 
@@ -560,7 +564,7 @@ function TaskRow({
           isActive ? (
             <button
               type="button"
-              className="rounded-full bg-white/8 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
+              className="rounded-full bg-white/8 px-3 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
               onClick={(event) => {
                 event.stopPropagation();
                 onStop();
@@ -584,7 +588,7 @@ function TaskRow({
         {onDelete ? (
           <button
             type="button"
-            className="rounded-full bg-[#4c241f] px-3 py-2 text-sm font-medium text-[#ff9a90] hover:opacity-90"
+            className="rounded-full bg-[color:var(--danger-soft)] px-3 py-2 text-sm font-medium text-[color:var(--danger)] hover:opacity-90"
             onClick={(event) => {
               event.stopPropagation();
               onDelete();
@@ -1085,21 +1089,21 @@ export default function HomePage() {
             className="w-full max-w-md rounded-[28px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-6 shadow-[var(--shadow)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="text-sm font-semibold text-zinc-100">タスクを削除しますか</p>
+            <p className="text-sm font-semibold text-[color:var(--text)]">タスクを削除しますか</p>
             <p className="mt-3 text-sm leading-6 text-zinc-400">
               「{deleteConfirmTask.title}」を削除すると、関連する作業ログも含めて元に戻せません。
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
-                className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
+                className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
                 onClick={() => setDeleteConfirmTask(null)}
               >
                 キャンセル
               </button>
               <button
                 type="button"
-                className="rounded-full bg-[#4c241f] px-4 py-2 text-sm font-medium text-[#ff9a90]"
+                className="rounded-full bg-[color:var(--danger-soft)] px-4 py-2 text-sm font-medium text-[color:var(--danger)]"
                 onClick={async () => {
                   const ok = await handleDelete(deleteConfirmTask.id);
                   if (ok) setDeleteConfirmTask(null);
@@ -1117,14 +1121,14 @@ export default function HomePage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-zinc-300 hover:bg-white/6"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[color:var(--muted)] hover:bg-white/6"
             >
               <IconMenu />
             </button>
-            <h1 className="text-[32px] font-semibold tracking-[-0.04em] text-zinc-50">今日</h1>
+            <h1 className="text-[32px] font-semibold tracking-[-0.04em] text-[color:var(--text)]">今日</h1>
           </div>
 
-          <div className="flex items-center gap-2 text-zinc-400">
+          <div className="flex items-center gap-2 text-[color:var(--muted)]">
             <Link
               href="/dashboard"
               className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent hover:bg-white/6"
@@ -1147,17 +1151,17 @@ export default function HomePage() {
         </div>
 
         <form className="relative mt-6" onSubmit={handleCreateTask}>
-          <div className="rounded-[20px] border border-white/[0.03] bg-[#222222] p-2">
+          <div className="rounded-[20px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-2">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[16px] px-3 py-2.5">
-                <span className="text-zinc-500">
+                <span className="text-[color:var(--muted)]">
                   <IconPlus />
                 </span>
                 <input
                   value={form.title}
                   onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
                   placeholder="タスクを追加する"
-                  className="min-w-0 flex-1 bg-transparent text-[17px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-[17px] text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:outline-none"
                 />
               </div>
 
@@ -1170,12 +1174,12 @@ export default function HomePage() {
                     onClick={() => setCreateCategoryMenuOpen((open) => !open)}
                     className={`inline-flex items-center gap-1 rounded-full border px-3 py-2 text-sm ${
                       createCategoryMenuOpen
-                        ? "border-white/12 bg-white/8 text-zinc-200"
-                        : "border-white/[0.06] bg-white/[0.04] text-zinc-400 hover:border-white/10 hover:bg-white/[0.06]"
+                        ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                        : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
                     } disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     <span>{categories.length === 0 ? "カテゴリ未設定" : form.category}</span>
-                    <span className="text-zinc-600">
+                    <span className="text-[color:var(--muted)]">
                       <IconChevronRight />
                     </span>
                   </button>
@@ -1183,14 +1187,14 @@ export default function HomePage() {
                   {createCategoryMenuOpen && categories.length > 0 ? (
                     <div
                       ref={createCategoryMenuRef}
-                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-white/10 bg-[#262626] py-2 shadow-[0_18px_40px_rgba(0,0,0,0.34)]"
+                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
                     >
                       {categories.map((category) => (
                         <button
                           key={category.id}
                           type="button"
                           className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                            form.category === category.name ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                            form.category === category.name ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
                           } hover:bg-white/6`}
                           onClick={() => {
                             setForm((prev) => ({ ...prev, category: category.name }));
@@ -1208,7 +1212,7 @@ export default function HomePage() {
                 <button
                   ref={dueTriggerRef}
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/10"
+                  className="inline-flex items-center gap-2 rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] hover:bg-white/10"
                   onClick={openCreateDuePicker}
                 >
                   <IconCalendar />
@@ -1233,7 +1237,7 @@ export default function HomePage() {
           {duePickerOpen ? (
             <div
               ref={duePickerRef}
-              className={`z-30 w-full max-w-[380px] rounded-[24px] border border-white/10 bg-[#262626] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.44)] ${
+              className={`z-30 w-full max-w-[380px] rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 shadow-[var(--shadow)] ${
                 duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
               }`}
               style={
@@ -1243,21 +1247,21 @@ export default function HomePage() {
               }
             >
               <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-white/5 p-1">
-                <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-zinc-100">
+                <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-[color:var(--text)]">
                   期日
                 </button>
-                <button type="button" className="rounded-[12px] px-4 py-2.5 text-sm font-medium text-zinc-500">
+                <button type="button" className="rounded-[12px] px-4 py-2.5 text-sm font-medium text-[color:var(--muted)]">
                   期間
                 </button>
               </div>
 
-              <div className="mt-4 grid grid-cols-4 gap-2 text-zinc-300">
+              <div className="mt-4 grid grid-cols-4 gap-2 text-[color:var(--text)]">
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
                   onClick={() => setCurrentDueDate(getTodayDateString())}
                 >
-                  <span className="text-zinc-300">
+                  <span className="text-[color:var(--muted)]">
                     <IconSpark />
                   </span>
                   <span>今日</span>
@@ -1267,7 +1271,7 @@ export default function HomePage() {
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
                   onClick={() => setCurrentDueDate(getTodayDateString(1))}
                 >
-                  <span className="text-zinc-300">
+                  <span className="text-[color:var(--muted)]">
                     <IconIdea />
                   </span>
                   <span>明日</span>
@@ -1277,7 +1281,7 @@ export default function HomePage() {
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
                   onClick={() => setCurrentDueDate(getTodayDateString(7))}
                 >
-                  <span className="text-zinc-300">
+                  <span className="text-[color:var(--muted)]">
                     <IconCalendar />
                   </span>
                   <span>+7日</span>
@@ -1287,7 +1291,7 @@ export default function HomePage() {
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
                   onClick={clearCurrentDue}
                 >
-                  <span className="text-zinc-300">
+                  <span className="text-[color:var(--muted)]">
                     <IconClock />
                   </span>
                   <span>なし</span>
@@ -1295,10 +1299,10 @@ export default function HomePage() {
               </div>
 
               <div className="mt-4 flex items-center justify-between">
-                <p className="text-[15px] font-medium tracking-[-0.02em] text-zinc-100">
+                <p className="text-[15px] font-medium tracking-[-0.02em] text-[color:var(--text)]">
                   {formatMonthLabel(calendarMonth)}
                 </p>
-                <div className="flex items-center gap-1 text-zinc-400">
+                <div className="flex items-center gap-1 text-[color:var(--muted)]">
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
@@ -1324,7 +1328,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-7 gap-y-2 text-center text-xs text-zinc-500">
+                <div className="mt-4 grid grid-cols-7 gap-y-2 text-center text-xs text-[color:var(--muted)]">
                 {weekLabels.map((label) => (
                   <div key={label}>{label}</div>
                 ))}
@@ -1344,10 +1348,10 @@ export default function HomePage() {
                         isSelected
                           ? "bg-[color:var(--accent)] text-white"
                           : isCurrentDay
-                            ? "bg-[#24355f] text-[#9bb6ff]"
-                            : isCurrentMonth
-                              ? "text-zinc-100 hover:bg-white/8"
-                              : "text-zinc-600 hover:bg-white/6"
+                          ? "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]"
+                          : isCurrentMonth
+                              ? "text-[color:var(--text)] hover:bg-white/8"
+                              : "text-[color:var(--muted)] hover:bg-white/6"
                       }`}
                       onClick={() => setCurrentDueDate(toDateKey(day))}
                     >
@@ -1357,7 +1361,7 @@ export default function HomePage() {
                 })}
               </div>
 
-              <div className="mt-4 space-y-2 border-t border-white/8 pt-4 text-zinc-300">
+              <div className="mt-4 space-y-2 border-t border-white/8 pt-4 text-[color:var(--text)]">
                 <button
                   type="button"
                   className="flex w-full items-center justify-between rounded-[18px] px-1 py-1.5 text-left hover:bg-white/4"
@@ -1367,18 +1371,18 @@ export default function HomePage() {
                     <IconClock />
                     時刻
                   </span>
-                  <span className="inline-flex items-center gap-2 text-sm text-zinc-500">
+                  <span className="inline-flex items-center gap-2 text-sm text-[color:var(--muted)]">
                     {currentDueTime || "未設定"}
                     <IconChevronRight />
                   </span>
                 </button>
                 {timePickerOpen ? (
-                  <div className="rounded-[18px] border border-white/8 bg-white/4 py-2">
+                  <div className="rounded-[18px] border border-[color:var(--line)] bg-white/4 py-2">
                     <div className="max-h-56 overflow-y-auto">
                       <button
                         type="button"
                         className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
-                          currentDueTime === "" ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                          currentDueTime === "" ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
                         }`}
                         onClick={() => setCurrentDueTime("")}
                       >
@@ -1390,7 +1394,7 @@ export default function HomePage() {
                           key={time}
                           type="button"
                           className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
-                            currentDueTime === time ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                            currentDueTime === time ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
                           }`}
                           onClick={() => setCurrentDueTime(time)}
                         >
@@ -1406,7 +1410,7 @@ export default function HomePage() {
                     <IconSpark />
                     リマインダー
                   </span>
-                  <span className="inline-flex items-center gap-2 text-sm text-zinc-500">
+                  <span className="inline-flex items-center gap-2 text-sm text-[color:var(--muted)]">
                     未設定
                     <IconChevronRight />
                   </span>
@@ -1416,7 +1420,7 @@ export default function HomePage() {
               <div className="mt-4 flex justify-between gap-3">
                 <button
                   type="button"
-                  className="rounded-[16px] border border-white/10 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/6"
+                  className="rounded-[16px] border border-[color:var(--line)] px-5 py-2.5 text-sm font-medium text-[color:var(--text)] hover:bg-white/6"
                   onClick={clearCurrentDue}
                 >
                   クリア
@@ -1444,40 +1448,40 @@ export default function HomePage() {
         </form>
 
         {error ? (
-          <p className="mt-4 rounded-[18px] bg-[#4c241f] px-4 py-3 text-sm text-[#ff9a90]">{error}</p>
+          <p className="mt-4 rounded-[18px] bg-[color:var(--danger-soft)] px-4 py-3 text-sm text-[color:var(--danger)]">{error}</p>
         ) : null}
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
             onClick={() => setDueFilter("all")}
           >
             すべて
           </button>
           <button
             type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
             onClick={() => setDueFilter("today")}
           >
             今日
           </button>
           <button
             type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
             onClick={() => setDueFilter("next7days")}
           >
             7日以内
           </button>
 
           <div className="ml-auto flex items-center gap-3">
-            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-zinc-400">
+            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-[color:var(--muted)]">
               {pendingCount} 件
             </div>
             <select
               value={taskSort}
               onChange={(event) => setTaskSort(event.target.value as TaskSort)}
-              className="rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 focus:outline-none"
+              className="rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
             >
               <option value="dueAsc">期限が近い順</option>
               <option value="dueDesc">期限が遠い順</option>
@@ -1488,7 +1492,7 @@ export default function HomePage() {
             <select
               value={categoryFilter}
               onChange={(event) => setCategoryFilter(event.target.value)}
-              className="rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 focus:outline-none"
+              className="rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
             >
               <option value="all">全カテゴリ</option>
               {categories.map((category) => (
@@ -1562,7 +1566,7 @@ export default function HomePage() {
           <div className="mb-3">
             <SectionHeader title="今日" count={groupedTasks.today.length} />
             {groupedTasks.today.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">今日のタスクはありません</div>
+              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今日のタスクはありません</div>
             ) : (
               <ul className="divide-y divide-white/[0.03]">
                 {groupedTasks.today.map((task) => (
@@ -1620,7 +1624,7 @@ export default function HomePage() {
           <div className="mb-3">
             <SectionHeader title="今後" count={groupedTasks.upcoming.length} />
             {groupedTasks.upcoming.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">今後のタスクはありません</div>
+              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今後のタスクはありません</div>
             ) : (
               <ul className="divide-y divide-white/[0.03]">
                 {groupedTasks.upcoming.map((task) => (
@@ -1678,7 +1682,7 @@ export default function HomePage() {
           <div>
             <SectionHeader title="完了" count={groupedTasks.completed.length} />
             {groupedTasks.completed.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">完了したタスクはありません</div>
+              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">完了したタスクはありません</div>
             ) : (
               <ul className="divide-y divide-white/[0.03]">
                 {groupedTasks.completed.map((task) => (
@@ -1737,11 +1741,11 @@ export default function HomePage() {
 
         <aside className="space-y-4">
           <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
-            <p className="text-sm text-zinc-500">進行中</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-zinc-50">
+            <p className="text-sm text-[color:var(--muted)]">進行中</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">
               {activeTask ? activeTask.title : "待機中"}
             </h2>
-            <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-zinc-50">
+            <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
               {formatSeconds(elapsedSeconds)}
             </p>
             <div className="mt-4 h-2 rounded-full bg-white/8">
@@ -1751,16 +1755,16 @@ export default function HomePage() {
               />
             </div>
             <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-white/6 px-2.5 py-1 text-zinc-400">
+              <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
                 {activeTask ? activeTask.category : "カテゴリ未選択"}
               </span>
-              <span className="rounded-full bg-white/6 px-2.5 py-1 text-zinc-400">
+              <span className="rounded-full bg-white/6 px-2.5 py-1 text-[color:var(--muted)]">
                 {activeTask ? formatDueAt(activeTask.due_at) : "期限未設定"}
               </span>
             </div>
             {activeEntry ? (
               <div className="mt-5 space-y-3">
-                <p className="text-sm text-zinc-500">開始 {formatStartTime(activeEntry.start_time)}</p>
+                <p className="text-sm text-[color:var(--muted)]">開始 {formatStartTime(activeEntry.start_time)}</p>
                 {editingActiveStartTime ? (
                   <div className="space-y-2">
                     <input
@@ -1768,7 +1772,7 @@ export default function HomePage() {
                       value={activeStartTimeInput}
                       max={toDateTimeLocalValue(new Date().toISOString())}
                       onChange={(event) => setActiveStartTimeInput(event.target.value)}
-                      className="w-full rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 focus:outline-none"
+                      className="w-full rounded-[18px] border border-[color:var(--line)] bg-white/5 px-4 py-3 text-sm text-[color:var(--text)] focus:outline-none"
                     />
                     <div className="flex gap-2">
                       <button
@@ -1780,7 +1784,7 @@ export default function HomePage() {
                       </button>
                       <button
                         type="button"
-                        className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100"
+                        className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)]"
                         onClick={() => setEditingActiveStartTime(false)}
                       >
                         キャンセル
@@ -1791,7 +1795,7 @@ export default function HomePage() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
+                      className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
                       onClick={() => setEditingActiveStartTime(true)}
                     >
                       開始時刻を修正
@@ -1809,26 +1813,26 @@ export default function HomePage() {
                 )}
               </div>
             ) : (
-              <p className="mt-5 text-sm leading-6 text-zinc-500">
+              <p className="mt-5 text-sm leading-6 text-[color:var(--muted)]">
                 タスクを開始すると、ここに実行中の情報が表示されます。
               </p>
             )}
           </section>
 
           <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
-            <p className="text-sm text-zinc-500">サマリー</p>
+            <p className="text-sm text-[color:var(--muted)]">サマリー</p>
             <div className="mt-4 space-y-3">
               <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-zinc-400">未完了</span>
-                <span className="text-lg font-semibold text-zinc-100">{filteredPendingTasks.length}</span>
+                <span className="text-sm text-[color:var(--muted)]">未完了</span>
+                <span className="text-lg font-semibold text-[color:var(--text)]">{filteredPendingTasks.length}</span>
               </div>
               <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-zinc-400">完了</span>
-                <span className="text-lg font-semibold text-zinc-100">{groupedTasks.completed.length}</span>
+                <span className="text-sm text-[color:var(--muted)]">完了</span>
+                <span className="text-lg font-semibold text-[color:var(--text)]">{groupedTasks.completed.length}</span>
               </div>
               <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
-                <span className="text-sm text-zinc-400">期限超過</span>
-                <span className="text-lg font-semibold text-[#ff9a90]">{groupedTasks.overdue.length}</span>
+                <span className="text-sm text-[color:var(--muted)]">期限超過</span>
+                <span className="text-lg font-semibold text-[color:var(--danger)]">{groupedTasks.overdue.length}</span>
               </div>
             </div>
           </section>
