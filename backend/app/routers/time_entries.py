@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import TimeEntry
-from app.schemas import TimeEntryDetailRead, TimeEntryEdit, TimeEntryRead
-from app.services.timer_service import update_time_entry
+from app.schemas import TimeEntryCreate, TimeEntryDetailRead, TimeEntryEdit, TimeEntryRead
+from app.services.timer_service import create_time_entry, update_time_entry
 
 router = APIRouter(prefix="/time-entries", tags=["time-entries"])
 
@@ -31,6 +31,17 @@ def list_time_entries(db: Session = Depends(get_db)) -> list[TimeEntryDetailRead
         )
 
     return items
+
+
+@router.post("", response_model=TimeEntryRead, status_code=status.HTTP_201_CREATED)
+def post_time_entry(payload: TimeEntryCreate, db: Session = Depends(get_db)) -> TimeEntryRead:
+    entry = create_time_entry(
+        db,
+        task_id=payload.task_id,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+    )
+    return TimeEntryRead.model_validate(entry)
 
 
 @router.patch("/{entry_id}", response_model=TimeEntryRead)

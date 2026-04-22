@@ -4,10 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api, SummaryItem } from "@/lib/api";
+import { CustomDropdown } from "@/components/custom-dropdown";
 
 type Range = "daily" | "weekly" | "monthly" | "custom";
 
 const chartColors = ["#0f766e", "#14b8a6", "#f59e0b", "#475569", "#b45309", "#0f172a"];
+const rangeOptions = [
+  { value: "daily", label: "日次" },
+  { value: "weekly", label: "週次" },
+  { value: "monthly", label: "月次" },
+  { value: "custom", label: "任意" }
+];
 
 function formatMinutes(totalSeconds: number): string {
   return `${Math.floor(totalSeconds / 60)} 分`;
@@ -64,16 +71,12 @@ export default function DashboardPage() {
 
           <div className="rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4">
             <div className="grid gap-3">
-              <select
-                className="rounded-[18px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
+              <CustomDropdown
                 value={range}
-                onChange={(event) => setRange(event.target.value as Range)}
-              >
-                <option value="daily">日次</option>
-                <option value="weekly">週次</option>
-                <option value="monthly">月次</option>
-                <option value="custom">任意</option>
-              </select>
+                options={rangeOptions}
+                onChange={(next) => setRange(next as Range)}
+                placeholder="集計範囲を選択"
+              />
               <input
                 type="datetime-local"
                 className="rounded-[18px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"

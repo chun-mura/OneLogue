@@ -28,6 +28,12 @@ export type TimeEntryDetail = TimeEntry & {
   task_status: TaskStatus;
 };
 
+export type TimeEntryCreatePayload = {
+  task_id: number;
+  start_time: string;
+  end_time: string;
+};
+
 export type SummaryItem = {
   category: string;
   total_seconds: number;
@@ -74,6 +80,11 @@ export const api = {
   getActiveTimer: () =>
     request<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
   listTimeEntries: () => request<TimeEntryDetail[]>("/time-entries"),
+  createTimeEntry: (payload: TimeEntryCreatePayload) =>
+    request<TimeEntry>("/time-entries", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   createTask: (payload: Omit<Task, "id" | "created_at">) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(payload) }),
   updateTask: (taskId: number, payload: Partial<Omit<Task, "id" | "created_at">>) =>

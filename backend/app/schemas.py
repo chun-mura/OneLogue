@@ -155,6 +155,19 @@ class TimeEntryEdit(BaseModel):
         return v
 
 
+class TimeEntryCreate(BaseModel):
+    task_id: int
+    start_time: datetime
+    end_time: datetime
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def _naive_datetime_is_utc_for_create(cls, v: object) -> object:
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
+
+
 class TimerActionResponse(BaseModel):
     message: str
     active_entry: TimeEntryRead | None = None

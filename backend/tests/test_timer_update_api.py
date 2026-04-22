@@ -156,3 +156,68 @@ def test_patch_time_entry_updates_start_and_end() -> None:
         assert _parse_api_datetime(body["end_time"]) == datetime.fromisoformat(updated_end)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_post_time_entry_creates_entry_for_task() -> None:
+    client = _memory_client()
+    try:
+        client.post("/categories", json={"name": "開発"})
+        task_r = client.post(
+            "/tasks",
+            json={
+                "title": "実装する",
+                "category": "開発",
+                "due_at": None,
+                "status": "pending",
+            },
+        )
+        task_id = task_r.json()["id"]
+
+        start = datetime.now(timezone.utc) - timedelta(hours=2)
+        end = start + timedelta(hours=1, minutes=30)
+        post_r = client.post(
+            "/time-entries",
+            json={
+                "task_id": task_id,
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        )
+
+        assert post_r.status_code == 201
+        body = post_r.json()
+        assert body["task_id"] == task_id
+        assert _parse_api_datetime(body["start_time"]) == start
+        assert _parse_api_datetime(body["end_time"]) == end
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_time_entry_rejects_invalid_range() -> None:
+    client = _memory_client()
+    try:
+        client.post("/categories", json={"name": "開発"})
+        task_r = client.post(
+            "/tasks",
+            json={
+                "title": "実装する",
+                "category": "開発",
+                "due_at": None,
+                "status": "pending",
+            },
+        )
+        task_id = task_r.json()["id"]
+
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        post_r = client.post(
+            "/time-entries",
+            json={
+                "task_id": task_id,
+                "start_time": start.isoformat(),
+                "end_time": (start - timedelta(minutes=30)).isoformat(),
+            },
+        )
+
+        assert post_r.status_code == 422
+    finally:
+        app.dependency_overrides.clear()

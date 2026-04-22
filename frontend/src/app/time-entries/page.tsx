@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { api, TimeEntryDetail, TaskStatus } from "@/lib/api";
+import { api, Task, TimeEntryDetail, TaskStatus } from "@/lib/api";
+import { CustomDropdown } from "@/components/custom-dropdown";
 
 function toDateTimeLocalValue(value: string): string {
   const date = new Date(value);
@@ -51,8 +52,14 @@ function statusLabel(status: TaskStatus): string {
 
 export default function TimeEntriesPage() {
   const [entries, setEntries] = useState<TimeEntryDetail[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createTaskId, setCreateTaskId] = useState("");
+  const [createStartInput, setCreateStartInput] = useState("");
+  const [createEndInput, setCreateEndInput] = useState("");
+  const [createFormInitialized, setCreateFormInitialized] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
@@ -63,11 +70,16 @@ export default function TimeEntriesPage() {
     setEntries(data);
   }
 
+  async function refreshTasks() {
+    const data = await api.listTasks();
+    setTasks(data);
+  }
+
   useEffect(() => {
     void (async () => {
       try {
         setError("");
-        await refreshEntries();
+        await Promise.all([refreshEntries(), refreshTasks()]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "時間一覧の取得に失敗しました");
       }
@@ -78,6 +90,16 @@ export default function TimeEntriesPage() {
     setClientNowIso(new Date().toISOString());
   }, []);
 
+  useEffect(() => {
+    if (!createFormInitialized && clientNowIso) {
+      const end = new Date(clientNowIso);
+      const start = new Date(end.getTime() - 60 * 60 * 1000);
+      setCreateStartInput(toDateTimeLocalValue(start.toISOString()));
+      setCreateEndInput(toDateTimeLocalValue(end.toISOString()));
+      setCreateFormInitialized(true);
+    }
+  }, [clientNowIso, createFormInitialized]);
+
   const summary = useMemo(() => {
     const completed = entries.filter((entry) => entry.end_time);
     return {
@@ -86,6 +108,45 @@ export default function TimeEntriesPage() {
       completed: completed.length
     };
   }, [entries]);
+
+  const taskOptions = useMemo(
+    () =>
+      tasks.map((task) => ({
+        value: String(task.id),
+        label: task.title,
+        description: task.category
+      })),
+    [tasks]
+  );
+
+  async function handleCreate() {
+    if (!createTaskId || !createStartInput || !createEndInput) return;
+
+    setCreating(true);
+    setError("");
+    try {
+      await api.createTimeEntry({
+        task_id: Number(createTaskId),
+        start_time: new Date(createStartInput).toISOString(),
+        end_time: new Date(createEndInput).toISOString()
+      });
+      setCreateTaskId("");
+      if (clientNowIso) {
+        const end = new Date(clientNowIso);
+        const start = new Date(end.getTime() - 60 * 60 * 1000);
+        setCreateStartInput(toDateTimeLocalValue(start.toISOString()));
+        setCreateEndInput(toDateTimeLocalValue(end.toISOString()));
+      } else {
+        setCreateStartInput("");
+        setCreateEndInput("");
+      }
+      await refreshEntries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "時間ログの登録に失敗しました");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function handleSave(entry: TimeEntryDetail) {
     if (!startInput) return;
@@ -144,6 +205,58 @@ export default function TimeEntriesPage() {
             {error}
           </p>
         ) : null}
+      </section>
+
+      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">
+        <div>
+          <h2 className="text-xl font-semibold text-[color:var(--text)]">時間ログを登録</h2>
+          <p className="mt-1 text-sm text-[color:var(--muted)]">
+            タスクを選び、開始時刻と終了時刻を指定して保存します。
+          </p>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
+          <div className="space-y-2">
+            <span className="text-sm font-semibold text-[color:var(--text)]">タスク</span>
+            <CustomDropdown
+              value={createTaskId}
+              options={taskOptions}
+              onChange={setCreateTaskId}
+              placeholder={tasks.length === 0 ? "登録済みタスクがありません" : "タスクを選択してください"}
+              disabled={tasks.length === 0}
+            />
+          </div>
+          <label className="space-y-2">
+            <span className="text-sm font-semibold text-[color:var(--text)]">開始時刻</span>
+            <input
+              type="datetime-local"
+              className="w-full rounded-[20px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
+              value={createStartInput}
+              max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
+              onChange={(event) => setCreateStartInput(event.target.value)}
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-sm font-semibold text-[color:var(--text)]">終了時刻</span>
+            <input
+              type="datetime-local"
+              className="w-full rounded-[20px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
+              value={createEndInput}
+              max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
+              onChange={(event) => setCreateEndInput(event.target.value)}
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="button"
+              disabled={creating || !createTaskId || !createStartInput || !createEndInput}
+              className="w-full rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-semibold text-white hover:bg-[color:var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+              onClick={() => void handleCreate()}
+            >
+              登録
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">

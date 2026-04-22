@@ -150,3 +150,37 @@ def update_time_entry(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+def create_time_entry(
+    db: Session, task_id: int, start_time: datetime, end_time: datetime
+) -> TimeEntry:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    normalized_start = _as_utc(start_time)
+    normalized_end = _as_utc(end_time)
+    now = datetime.now(timezone.utc)
+
+    if normalized_start > now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Start time cannot be in the future",
+        )
+    if normalized_end > now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="End time cannot be in the future",
+        )
+    if normalized_end <= normalized_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="End time must be after start time",
+        )
+
+    entry = TimeEntry(task_id=task_id, start_time=normalized_start, end_time=normalized_end)
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
