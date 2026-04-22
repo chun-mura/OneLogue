@@ -86,12 +86,30 @@ class TimeEntryRead(BaseModel):
         return v
 
 
+class TimeEntryDetailRead(TimeEntryRead):
+    task_title: str
+    task_category: str
+    task_status: TaskStatus
+
+
 class TimeEntryUpdate(BaseModel):
     start_time: datetime
 
     @field_validator("start_time", mode="before")
     @classmethod
     def _naive_datetime_is_utc_for_update(cls, v: object) -> object:
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
+
+
+class TimeEntryEdit(BaseModel):
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def _naive_datetime_is_utc_for_edit(cls, v: object) -> object:
         if isinstance(v, datetime) and v.tzinfo is None:
             return v.replace(tzinfo=timezone.utc)
         return v

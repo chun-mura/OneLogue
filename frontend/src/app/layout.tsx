@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 
 const navItems = [
   { href: "/", label: "Workspace" },
+  { href: "/time-entries", label: "Time Logs" },
   { href: "/categories", label: "Categories" },
   { href: "/dashboard", label: "Insights" }
 ];

@@ -13,7 +13,14 @@ from app.services.timer_service import (
     stop_task_timer,
     stop_task_timer_if_running,
     update_active_task_timer_start,
+    update_time_entry,
 )
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _create_test_db() -> Session:
@@ -140,7 +147,7 @@ def test_update_active_task_timer_start_rewrites_running_entry_start_time() -> N
     updated = update_active_task_timer_start(db, task.id, new_start)
 
     assert updated.id == entry.id
-    assert updated.start_time == new_start
+    assert _as_utc(updated.start_time) == _as_utc(new_start)
     assert updated.end_time is None
 
 
@@ -155,5 +162,57 @@ def test_update_active_task_timer_start_rejects_future_time() -> None:
 
     with pytest.raises(HTTPException) as excinfo:
         update_active_task_timer_start(db, task.id, datetime.now(timezone.utc) + timedelta(minutes=1))
+
+    assert excinfo.value.status_code == 422
+
+
+def test_update_time_entry_rewrites_closed_entry_range() -> None:
+    db = _create_test_db()
+    task = Task(title="A", category="Work", status="completed")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    now = datetime.now(timezone.utc)
+    entry = TimeEntry(
+        task_id=task.id,
+        start_time=now - timedelta(minutes=30),
+        end_time=now - timedelta(minutes=10),
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    updated = update_time_entry(
+        db,
+        entry.id,
+        start_time=entry.start_time - timedelta(minutes=15),
+        end_time=entry.end_time - timedelta(minutes=5),
+    )
+
+    assert _as_utc(updated.start_time) == now - timedelta(minutes=45)
+    assert updated.end_time is not None
+    assert _as_utc(updated.end_time) == now - timedelta(minutes=15)
+
+
+def test_update_time_entry_rejects_end_before_start() -> None:
+    db = _create_test_db()
+    task = Task(title="A", category="Work", status="completed")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    now = datetime.now(timezone.utc)
+    entry = TimeEntry(
+        task_id=task.id,
+        start_time=now - timedelta(minutes=30),
+        end_time=now - timedelta(minutes=10),
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    with pytest.raises(HTTPException) as excinfo:
+        update_time_entry(db, entry.id, end_time=entry.start_time - timedelta(minutes=1))
 
     assert excinfo.value.status_code == 422

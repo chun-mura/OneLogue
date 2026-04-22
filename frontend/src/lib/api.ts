@@ -22,6 +22,12 @@ export type TimeEntry = {
   end_time: string | null;
 };
 
+export type TimeEntryDetail = TimeEntry & {
+  task_title: string;
+  task_category: string;
+  task_status: TaskStatus;
+};
+
 export type SummaryItem = {
   category: string;
   total_seconds: number;
@@ -67,6 +73,7 @@ export const api = {
   listTasks: () => request<Task[]>("/tasks"),
   getActiveTimer: () =>
     request<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
+  listTimeEntries: () => request<TimeEntryDetail[]>("/time-entries"),
   createTask: (payload: Omit<Task, "id" | "created_at">) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(payload) }),
   updateTask: (taskId: number, payload: Partial<Omit<Task, "id" | "created_at">>) =>
@@ -84,6 +91,14 @@ export const api = {
   stopTask: (taskId: number) =>
     request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/stop`, {
       method: "POST"
+    }),
+  updateTimeEntry: (
+    entryId: number,
+    payload: Partial<Pick<TimeEntry, "start_time" | "end_time">>
+  ) =>
+    request<TimeEntry>(`/time-entries/${entryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
     }),
   getSummary: (range: "daily" | "weekly" | "monthly" | "custom", from?: string, to?: string) => {
     const params = new URLSearchParams({ range });

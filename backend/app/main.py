@@ -9,6 +9,7 @@ from app.models import Category, Task
 from app.routers.categories import router as categories_router
 from app.routers.stats import router as stats_router
 from app.routers.tasks import router as tasks_router
+from app.routers.time_entries import router as time_entries_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -68,6 +69,7 @@ app.add_middleware(
 
 app.include_router(categories_router)
 app.include_router(tasks_router)
+app.include_router(time_entries_router)
 app.include_router(stats_router)
 
 

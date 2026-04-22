@@ -522,6 +522,14 @@ export default function HomePage() {
                   </button>
                 </div>
               ) : null}
+              <div className="mt-4">
+                <Link
+                  href="/time-entries"
+                  className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+                >
+                  時間一覧を開く
+                </Link>
+              </div>
             </div>
           </aside>
         </div>
