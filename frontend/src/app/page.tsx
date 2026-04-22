@@ -618,6 +618,8 @@ export default function HomePage() {
   const [editingCategoryTaskId, setEditingCategoryTaskId] = useState<number | null>(null);
   const [editingCategoryValue, setEditingCategoryValue] = useState("");
   const [createCategoryMenuOpen, setCreateCategoryMenuOpen] = useState(false);
+  const [categoryFilterMenuOpen, setCategoryFilterMenuOpen] = useState(false);
+  const [taskSortMenuOpen, setTaskSortMenuOpen] = useState(false);
   const [animatingCompleteTaskIds, setAnimatingCompleteTaskIds] = useState<number[]>([]);
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [taskSort, setTaskSort] = useState<TaskSort>("dueAsc");
@@ -639,6 +641,10 @@ export default function HomePage() {
   const categoryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const createCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const createCategoryTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const categoryFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const categoryFilterTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const taskSortMenuRef = useRef<HTMLDivElement | null>(null);
+  const taskSortTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const elapsedSeconds = useTimer(activeEntry?.start_time ?? null);
   const activeTask = useMemo(
@@ -810,6 +816,54 @@ export default function HomePage() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [createCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (!categoryFilterMenuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (categoryFilterMenuRef.current?.contains(target)) return;
+      if (categoryFilterTriggerRef.current?.contains(target)) return;
+      setCategoryFilterMenuOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setCategoryFilterMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [categoryFilterMenuOpen]);
+
+  useEffect(() => {
+    if (!taskSortMenuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (taskSortMenuRef.current?.contains(target)) return;
+      if (taskSortTriggerRef.current?.contains(target)) return;
+      setTaskSortMenuOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setTaskSortMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [taskSortMenuOpen]);
 
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1172,7 +1226,7 @@ export default function HomePage() {
                     type="button"
                     disabled={categories.length === 0}
                     onClick={() => setCreateCategoryMenuOpen((open) => !open)}
-                    className={`inline-flex items-center gap-1 rounded-full border px-3 py-2 text-sm ${
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${
                       createCategoryMenuOpen
                         ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
                         : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
@@ -1187,7 +1241,7 @@ export default function HomePage() {
                   {createCategoryMenuOpen && categories.length > 0 ? (
                     <div
                       ref={createCategoryMenuRef}
-                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
                     >
                       {categories.map((category) => (
                         <button
@@ -1451,56 +1505,150 @@ export default function HomePage() {
           <p className="mt-4 rounded-[18px] bg-[color:var(--danger-soft)] px-4 py-3 text-sm text-[color:var(--danger)]">{error}</p>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
-            onClick={() => setDueFilter("all")}
-          >
-            すべて
-          </button>
-          <button
-            type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
-            onClick={() => setDueFilter("today")}
-          >
-            今日
-          </button>
-          <button
-            type="button"
-            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
-            onClick={() => setDueFilter("next7days")}
-          >
-            7日以内
-          </button>
+        <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+          <div className="flex flex-wrap items-center gap-2 md:shrink-0">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("all")}
+            >
+              すべて
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("today")}
+            >
+              今日
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-[color:var(--text)]" : "bg-white/5 text-[color:var(--muted)] hover:bg-white/8"}`}
+              onClick={() => setDueFilter("next7days")}
+            >
+              7日以内
+            </button>
+          </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-[color:var(--muted)]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:ml-auto md:flex-row md:flex-wrap md:items-center">
+            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-[color:var(--muted)] sm:shrink-0">
               {pendingCount} 件
             </div>
-            <select
-              value={taskSort}
-              onChange={(event) => setTaskSort(event.target.value as TaskSort)}
-              className="rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
-            >
-              <option value="dueAsc">期限が近い順</option>
-              <option value="dueDesc">期限が遠い順</option>
-              <option value="createdDesc">新しい順</option>
-              <option value="createdAsc">古い順</option>
-              <option value="titleAsc">名前順</option>
-            </select>
-            <select
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-              className="rounded-full border border-[color:var(--line)] bg-white/5 px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
-            >
-              <option value="all">全カテゴリ</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.name}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative w-full sm:w-auto">
+              <button
+                ref={taskSortTriggerRef}
+                type="button"
+                onClick={() => setTaskSortMenuOpen((open) => !open)}
+                className={`inline-flex w-full items-center justify-between gap-1 rounded-full border px-3 py-2 text-sm font-medium sm:w-auto ${
+                  taskSortMenuOpen
+                    ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                    : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
+                }`}
+                aria-haspopup="menu"
+                aria-expanded={taskSortMenuOpen}
+              >
+                <span>
+                  {taskSort === "dueAsc"
+                    ? "期限が近い順"
+                    : taskSort === "dueDesc"
+                      ? "期限が遠い順"
+                      : taskSort === "createdDesc"
+                        ? "新しい順"
+                        : taskSort === "createdAsc"
+                          ? "古い順"
+                          : "名前順"}
+                </span>
+                <span className="text-[color:var(--muted)]">
+                  <IconChevronRight />
+                </span>
+              </button>
+
+              {taskSortMenuOpen ? (
+                <div
+                  ref={taskSortMenuRef}
+                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                >
+                  {[
+                    ["dueAsc", "期限が近い順"],
+                    ["dueDesc", "期限が遠い順"],
+                    ["createdDesc", "新しい順"],
+                    ["createdAsc", "古い順"],
+                    ["titleAsc", "名前順"]
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                        taskSort === value ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                      } hover:bg-white/6`}
+                      onClick={() => {
+                        setTaskSort(value as TaskSort);
+                        setTaskSortMenuOpen(false);
+                      }}
+                    >
+                      <span>{label}</span>
+                      {taskSort === value ? <IconCheck /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="relative w-full sm:w-auto">
+              <button
+                ref={categoryFilterTriggerRef}
+                type="button"
+                onClick={() => setCategoryFilterMenuOpen((open) => !open)}
+                className={`inline-flex w-full items-center justify-between gap-1 rounded-full border px-3 py-2 text-sm font-medium sm:w-auto ${
+                  categoryFilterMenuOpen
+                    ? "border-[color:var(--line-strong)] bg-white/8 text-[color:var(--text)]"
+                    : "border-[color:var(--line)] bg-white/[0.04] text-[color:var(--muted)] hover:border-[color:var(--line-strong)] hover:bg-white/[0.06]"
+                }`}
+                aria-haspopup="menu"
+                aria-expanded={categoryFilterMenuOpen}
+              >
+                <span>{categoryFilter === "all" ? "全カテゴリ" : categoryFilter}</span>
+                <span className="text-[color:var(--muted)]">
+                  <IconChevronRight />
+                </span>
+              </button>
+
+              {categoryFilterMenuOpen ? (
+                <div
+                  ref={categoryFilterMenuRef}
+                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                >
+                  <button
+                    type="button"
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                      categoryFilter === "all" ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                    } hover:bg-white/6`}
+                    onClick={() => {
+                      setCategoryFilter("all");
+                      setCategoryFilterMenuOpen(false);
+                    }}
+                  >
+                    <span>全カテゴリ</span>
+                    {categoryFilter === "all" ? <IconCheck /> : null}
+                  </button>
+                  {categories.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                        categoryFilter === category.name ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
+                      } hover:bg-white/6`}
+                      onClick={() => {
+                        setCategoryFilter(category.name);
+                        setCategoryFilterMenuOpen(false);
+                      }}
+                    >
+                      <span>{category.name}</span>
+                      {categoryFilter === category.name ? <IconCheck /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
@@ -1532,14 +1680,7 @@ export default function HomePage() {
                         setEditingTitleValue("");
                       }}
                       isEditingDue={editingDueTaskId === task.id}
-                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
                       onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      onEditDueChange={setEditingDueValue}
-                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
-                      onEditDueCancel={() => {
-                        setEditingDueTaskId(null);
-                        setEditingDueValue("");
-                      }}
                       isEditingCategory={editingCategoryTaskId === task.id}
                       editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
                       categoryOptions={categories.map((category) => category.name)}
@@ -1590,14 +1731,7 @@ export default function HomePage() {
                         setEditingTitleValue("");
                       }}
                       isEditingDue={editingDueTaskId === task.id}
-                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
                       onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      onEditDueChange={setEditingDueValue}
-                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
-                      onEditDueCancel={() => {
-                        setEditingDueTaskId(null);
-                        setEditingDueValue("");
-                      }}
                       isEditingCategory={editingCategoryTaskId === task.id}
                       editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
                       categoryOptions={categories.map((category) => category.name)}
@@ -1648,14 +1782,7 @@ export default function HomePage() {
                         setEditingTitleValue("");
                       }}
                       isEditingDue={editingDueTaskId === task.id}
-                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
                       onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      onEditDueChange={setEditingDueValue}
-                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
-                      onEditDueCancel={() => {
-                        setEditingDueTaskId(null);
-                        setEditingDueValue("");
-                      }}
                       isEditingCategory={editingCategoryTaskId === task.id}
                       editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
                       categoryOptions={categories.map((category) => category.name)}
@@ -1706,14 +1833,7 @@ export default function HomePage() {
                         setEditingTitleValue("");
                       }}
                       isEditingDue={editingDueTaskId === task.id}
-                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
                       onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      onEditDueChange={setEditingDueValue}
-                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
-                      onEditDueCancel={() => {
-                        setEditingDueTaskId(null);
-                        setEditingDueValue("");
-                      }}
                       isEditingCategory={editingCategoryTaskId === task.id}
                       editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
                       categoryOptions={categories.map((category) => category.name)}
