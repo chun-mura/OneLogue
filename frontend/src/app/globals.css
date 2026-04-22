@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 :root {
+  --font-sans: "Avenir Next", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
   --bg: #f3efe7;
   --bg-soft: #f8f5ef;
   --surface: rgba(255, 252, 247, 0.78);

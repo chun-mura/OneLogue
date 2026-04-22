@@ -36,12 +36,15 @@ def _memory_client() -> TestClient:
 def test_delete_completed_task_removes_time_entries() -> None:
     client, session_local = _memory_client()
     try:
+        category_r = client.post("/categories", json={"name": "C"})
+        assert category_r.status_code == 201
+
         r = client.post(
             "/tasks",
             json={
                 "title": "T",
                 "category": "C",
-                "priority": 2,
+                "due_at": None,
                 "status": "pending",
             },
         )
@@ -63,12 +66,15 @@ def test_delete_completed_task_removes_time_entries() -> None:
 def test_delete_pending_task_is_rejected() -> None:
     client, _ = _memory_client()
     try:
+        category_r = client.post("/categories", json={"name": "C"})
+        assert category_r.status_code == 201
+
         r = client.post(
             "/tasks",
             json={
                 "title": "T",
                 "category": "C",
-                "priority": 2,
+                "due_at": None,
                 "status": "pending",
             },
         )

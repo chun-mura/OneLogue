@@ -1,17 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Manrope, Newsreader } from "next/font/google";
-
-const sans = Manrope({
-  subsets: ["latin"],
-  variable: "--font-sans"
-});
-
-const serif = Newsreader({
-  subsets: ["latin"],
-  variable: "--font-serif"
-});
 
 export const metadata: Metadata = {
   title: "OneLogue",
@@ -20,6 +9,7 @@ export const metadata: Metadata = {
 
 const navItems = [
   { href: "/", label: "Workspace" },
+  { href: "/categories", label: "Categories" },
   { href: "/dashboard", label: "Insights" }
 ];
 
@@ -30,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className={`${sans.variable} ${serif.variable} font-[family-name:var(--font-sans)]`}>
+      <body className="font-[family-name:var(--font-sans)]">
         <div className="relative min-h-screen overflow-hidden">
           <div className="absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-white/55 to-transparent" />
           <header className="relative z-10">

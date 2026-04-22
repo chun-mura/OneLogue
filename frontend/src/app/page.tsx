@@ -1,48 +1,57 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
-import { api, Task, TaskStatus, TimeEntry } from "@/lib/api";
+import { api, Category, Task, TaskStatus, TimeEntry } from "@/lib/api";
 
 type TaskFormState = {
   title: string;
   category: string;
-  priority: number;
+  due_at: string;
   status: TaskStatus;
 };
+
+type DueFilter = "today" | "next7days" | "all";
 
 const initialForm: TaskFormState = {
   title: "",
   category: "",
-  priority: 2,
+  due_at: "",
   status: "pending"
 };
 
-function priorityLabel(priority: number): string {
-  switch (priority) {
-    case 1:
-      return "低";
-    case 2:
-      return "中";
-    case 3:
-      return "高";
-    default:
-      return String(priority);
-  }
+function formatDueAt(dueAt: string | null): string {
+  if (!dueAt) return "期限未設定";
+  return new Date(`${dueAt}T00:00:00`).toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
 }
 
-function priorityTone(priority: number): string {
-  switch (priority) {
-    case 3:
-      return "bg-amber-100 text-amber-800";
-    case 2:
-      return "bg-teal-100 text-teal-800";
-    case 1:
-      return "bg-stone-200 text-stone-700";
-    default:
-      return "bg-stone-200 text-stone-700";
+function dueTone(dueAt: string | null, status: TaskStatus): string {
+  if (!dueAt) return "bg-stone-200 text-stone-700";
+  const today = new Date();
+  const todayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const dueKey = new Date(`${dueAt}T00:00:00`).getTime();
+  if (status === "pending" && dueKey < todayKey) {
+    return "bg-rose-100 text-rose-700";
   }
+  return "bg-sky-100 text-sky-800";
+}
+
+function toApiDueAt(value: string): string | null {
+  if (!value) return null;
+  return value;
+}
+
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function statusLabel(status: TaskStatus): string {
@@ -58,7 +67,24 @@ function statusLabel(status: TaskStatus): string {
   }
 }
 
+function isDueWithinFilter(dueAt: string | null, filter: DueFilter): boolean {
+  if (filter === "all") return true;
+  if (!dueAt) return false;
+
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const due = new Date(`${dueAt}T00:00:00`).getTime();
+
+  if (filter === "today") {
+    return due === start;
+  }
+
+  const end = start + 6 * 24 * 60 * 60 * 1000;
+  return due >= start && due <= end;
+}
+
 export default function HomePage() {
+  const [categories, setCategories] = useState<Category[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
   const [form, setForm] = useState<TaskFormState>(initialForm);
@@ -66,6 +92,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [completedOpen, setCompletedOpen] = useState(true);
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null);
+  const [dueFilter, setDueFilter] = useState<DueFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const elapsedSeconds = useTimer(activeEntry?.start_time ?? null);
   const activeTask = useMemo(
@@ -73,7 +101,7 @@ export default function HomePage() {
     [tasks, activeEntry]
   );
 
-  const { incompleteTasks, completedTasks, totalTrackedTaskCount } = useMemo(() => {
+  const { incompleteTasks, filteredIncompleteTasks, completedTasks, totalTrackedTaskCount } = useMemo(() => {
     const incomplete: Task[] = [];
     const completed: Task[] = [];
 
@@ -85,16 +113,39 @@ export default function HomePage() {
       }
     }
 
+    const filteredIncomplete = incomplete.filter((task) => {
+      if (categoryFilter !== "all" && task.category !== categoryFilter) {
+        return false;
+      }
+
+      return isDueWithinFilter(task.due_at, dueFilter);
+    });
+
     return {
       incompleteTasks: incomplete,
+      filteredIncompleteTasks: filteredIncomplete,
       completedTasks: completed,
       totalTrackedTaskCount: tasks.length
     };
-  }, [tasks]);
+  }, [tasks, dueFilter, categoryFilter]);
 
   async function refreshTasks() {
     const data = await api.listTasks();
     setTasks(data);
+  }
+
+  async function refreshCategories() {
+    const data = await api.listCategories();
+    setCategories(data);
+    setForm((prev) => {
+      if (data.length === 0) {
+        return { ...prev, category: "" };
+      }
+      if (prev.category && data.some((category) => category.name === prev.category)) {
+        return prev;
+      }
+      return { ...prev, category: data[0].name };
+    });
   }
 
   async function syncActiveEntry() {
@@ -107,12 +158,21 @@ export default function HomePage() {
     void (async () => {
       try {
         setError("");
-        await Promise.all([refreshTasks(), syncActiveEntry()]);
+        await Promise.all([refreshTasks(), refreshCategories(), syncActiveEntry()]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "初期データの取得に失敗しました");
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (categoryFilter === "all") return;
+    if (categories.some((category) => category.name === categoryFilter)) return;
+    setCategoryFilter("all");
+  }, [categories, categoryFilter]);
+
+    setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
+  }, [activeEntry]);
 
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -121,8 +181,9 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      await api.createTask(form);
+      await api.createTask({ ...form, due_at: toApiDueAt(form.due_at) });
       setForm(initialForm);
+      await refreshCategories();
       await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "タスク作成に失敗しました");
@@ -396,7 +457,7 @@ export default function HomePage() {
               </h2>
             </div>
             <p className="max-w-xs text-right text-sm leading-6 text-[color:var(--muted)]">
-              カテゴリと優先度を先に決めておくと、後の集計まで崩れません。
+              カテゴリは事前登録制です。期限もここで決めておくと、着手順を迷いにくくなります。
             </p>
           </div>
 
@@ -412,35 +473,49 @@ export default function HomePage() {
             </label>
             <label className="space-y-2">
               <span className="text-sm font-semibold text-[color:var(--text)]">カテゴリ</span>
-              <input
+              <select
                 className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] placeholder:text-stone-400 focus:border-[color:var(--accent)] focus:bg-white"
-                placeholder="企画 / 開発 / 運用"
                 value={form.category}
+                disabled={categories.length === 0}
                 onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
-              />
+              >
+                {categories.length === 0 ? (
+                  <option value="">カテゴリを先に登録してください</option>
+                ) : (
+                  categories.map((category) => (
+                    <option key={category.id} value={category.name}>
+                      {category.name}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
             <label className="space-y-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">優先度</span>
-              <select
+              <span className="text-sm font-semibold text-[color:var(--text)]">期限</span>
+              <input
+                type="date"
                 className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
-                value={form.priority}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, priority: Number(event.target.value) }))
-                }
-              >
-                <option value={1}>低</option>
-                <option value={2}>中</option>
-                <option value={3}>高</option>
-              </select>
+                value={form.due_at}
+                onChange={(event) => setForm((prev) => ({ ...prev, due_at: event.target.value }))}
+              />
             </label>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || categories.length === 0}
               className="md:col-span-2 inline-flex items-center justify-center rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               タスクを追加
             </button>
           </form>
+
+          {categories.length === 0 ? (
+            <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
+              まだカテゴリがありません。
+              <Link href="/categories" className="ml-2 font-semibold text-[color:var(--accent)]">
+                カテゴリ管理へ
+              </Link>
+            </p>
+          ) : null}
         </section>
 
         <section className="flex max-h-[720px] flex-col rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur">
@@ -453,17 +528,50 @@ export default function HomePage() {
                 未完了タスク
               </h2>
             </div>
-            <p className="text-sm text-[color:var(--muted)]">{incompleteTasks.length} items</p>
+            <p className="text-sm text-[color:var(--muted)]">
+              {filteredIncompleteTasks.length} / {incompleteTasks.length} items
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm font-semibold text-[color:var(--text)]">期限で絞り込む</span>
+              <select
+                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
+                value={dueFilter}
+                onChange={(event) => setDueFilter(event.target.value as DueFilter)}
+              >
+                <option value="today">今日</option>
+                <option value="next7days">次の7日間</option>
+                <option value="all">全て</option>
+              </select>
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-semibold text-[color:var(--text)]">カテゴリで絞り込む</span>
+              <select
+                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+              >
+                <option value="all">全て</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="mt-6 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            {incompleteTasks.length === 0 ? (
+            {filteredIncompleteTasks.length === 0 ? (
               <div className="rounded-[26px] border border-dashed border-[color:var(--line-strong)] bg-white/50 px-4 py-12 text-center text-sm text-[color:var(--muted)]">
-                未完了のタスクはありません
+                条件に合う未完了タスクはありません
               </div>
             ) : (
               <ul className="space-y-3">
-                {incompleteTasks.map((task) => {
+                {filteredIncompleteTasks.map((task) => {
                   const isActive = activeEntry?.task_id === task.id;
 
                   return (
@@ -475,9 +583,9 @@ export default function HomePage() {
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <span
-                              className={`rounded-full px-3 py-1 text-xs font-semibold ${priorityTone(task.priority)}`}
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${dueTone(task.due_at, task.status)}`}
                             >
-                              優先度 {priorityLabel(task.priority)}
+                              {formatDueAt(task.due_at)}
                             </span>
                             <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
                               {task.category}
@@ -586,9 +694,9 @@ export default function HomePage() {
                             {task.category}
                           </span>
                           <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${priorityTone(task.priority)}`}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${dueTone(task.due_at, task.status)}`}
                           >
-                            優先度 {priorityLabel(task.priority)}
+                            {formatDueAt(task.due_at)}
                           </span>
                           <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                             {statusLabel(task.status)}

@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Task, TimeEntry
+from app.models import Category, Task, TimeEntry
 from app.schemas import TaskCreate, TaskRead, TaskUpdate, TimerActionResponse
 from app.services.timer_service import (
     get_active_task_timer,
@@ -15,9 +15,22 @@ from app.services.timer_service import (
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+def _ensure_category_exists(db: Session, category_name: str) -> str:
+    normalized = category_name.strip()
+    category = db.scalar(select(Category).where(func.lower(Category.name) == normalized.lower()))
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Category must be selected from registered categories",
+        )
+    return category.name
+
+
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> TaskRead:
-    task = Task(**payload.model_dump())
+    data = payload.model_dump()
+    data["category"] = _ensure_category_exists(db, payload.category)
+    task = Task(**data)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -27,8 +40,9 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> TaskRead:
 @router.get("", response_model=list[TaskRead])
 def list_tasks(db: Session = Depends(get_db)) -> list[TaskRead]:
     pending_first = case((Task.status == "pending", 0), else_=1)
+    due_empty_last = case((Task.due_at.is_(None), 1), else_=0)
     tasks = db.scalars(
-        select(Task).order_by(pending_first, Task.priority.desc(), Task.created_at.desc())
+        select(Task).order_by(pending_first, due_empty_last, Task.due_at.asc(), Task.created_at.desc())
     ).all()
     return [TaskRead.model_validate(task) for task in tasks]
 
@@ -46,6 +60,8 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     data = payload.model_dump(exclude_unset=True)
+    if "category" in data:
+        data["category"] = _ensure_category_exists(db, data["category"])
     new_status = data.get("status")
     if new_status in ("completed", "archived"):
         stop_task_timer_if_running(db, task_id)

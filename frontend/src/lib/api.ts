@@ -1,10 +1,16 @@
 export type TaskStatus = "pending" | "completed" | "archived";
 
+export type Category = {
+  id: number;
+  name: string;
+  created_at: string;
+};
+
 export type Task = {
   id: number;
   title: string;
   category: string;
-  priority: number;
+  due_at: string | null;
   status: TaskStatus;
   created_at: string;
 };
@@ -53,6 +59,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listCategories: () => request<Category[]>("/categories"),
+  createCategory: (payload: Pick<Category, "name">) =>
+    request<Category>("/categories", { method: "POST", body: JSON.stringify(payload) }),
+  deleteCategory: (categoryId: number) =>
+    request<void>(`/categories/${categoryId}`, { method: "DELETE" }),
   listTasks: () => request<Task[]>("/tasks"),
   getActiveTimer: () =>
     request<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
