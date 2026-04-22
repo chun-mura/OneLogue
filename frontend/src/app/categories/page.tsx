@@ -85,12 +85,9 @@ export default function CategoriesPage() {
             className="w-full max-w-md rounded-[28px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-6 shadow-[var(--shadow)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--danger)]">
-              Delete Category
-            </p>
             <h2
               id="delete-confirm-title"
-              className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]"
+              className="text-xl font-semibold text-[color:var(--text)]"
             >
               カテゴリを削除しますか
             </h2>
@@ -100,7 +97,7 @@ export default function CategoriesPage() {
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
-                className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white/80"
+                className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white/8"
                 disabled={loading}
                 onClick={() => setDeleteConfirmCategory(null)}
               >
@@ -122,30 +119,24 @@ export default function CategoriesPage() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-[36px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur lg:p-8">
-        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--accent)]">
-              Categories
-            </p>
-            <h1 className="max-w-2xl font-[family-name:var(--font-serif)] text-4xl leading-tight text-[color:var(--text)] sm:text-5xl">
-              タスクで使うカテゴリを、先に整えておく。
+      <section className="overflow-hidden rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">
+        <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+          <div className="space-y-2">
+            <h1 className="text-[32px] font-semibold tracking-[-0.04em] text-[color:var(--text)]">
+              カテゴリ
             </h1>
-            <p className="max-w-xl text-sm leading-7 text-[color:var(--muted)] sm:text-base">
-              ここで登録したカテゴリだけが、タスク作成時に選択できます。集計の粒度を安定させたいときに有効です。
+            <p className="text-sm text-[color:var(--muted)]">
+              タスクで使うカテゴリを管理します。
             </p>
           </div>
 
           <form
-            className="rounded-[30px] border border-[color:var(--line)] bg-white/70 p-5"
+            className="rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4"
             onSubmit={handleSubmit}
           >
-            <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--accent)]">
-              New Category
-            </p>
-            <div className="mt-4 grid gap-3">
+            <div className="grid gap-3">
               <input
-                className="rounded-[20px] border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--text)]"
+                className="rounded-[18px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 py-3 text-sm text-[color:var(--text)]"
                 placeholder="例: 開発"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -162,33 +153,32 @@ export default function CategoriesPage() {
         </div>
 
         {error ? (
-          <p className="mt-5 rounded-[22px] border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700">
+          <p className="mt-5 rounded-[22px] border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
           </p>
         ) : null}
       </section>
 
-      <section className="rounded-[36px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur lg:p-8">
+      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--accent)]">Library</p>
-            <h2 className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]">
+            <h2 className="text-xl font-semibold text-[color:var(--text)]">
               登録済みカテゴリ
             </h2>
           </div>
-          <p className="text-sm text-[color:var(--muted)]">{categories.length} items</p>
+          <p className="text-sm text-[color:var(--muted)]">{categories.length} 件</p>
         </div>
 
         <div className="mt-6 space-y-3">
           {categories.length === 0 ? (
-            <div className="rounded-[26px] border border-dashed border-[color:var(--line-strong)] bg-white/50 px-4 py-12 text-center text-sm text-[color:var(--muted)]">
+            <div className="rounded-[26px] border border-dashed border-[color:var(--line-strong)] bg-[color:var(--surface-soft)] px-4 py-12 text-center text-sm text-[color:var(--muted)]">
               まだカテゴリは登録されていません
             </div>
           ) : (
             categories.map((category) => (
               <article
                 key={category.id}
-                className="flex flex-col gap-3 rounded-[28px] border border-[color:var(--line)] bg-white/72 p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-[22px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
                   <p className="text-lg font-semibold text-[color:var(--text)]">{category.name}</p>
@@ -199,7 +189,7 @@ export default function CategoriesPage() {
                 <button
                   type="button"
                   disabled={loading}
-                  className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => setDeleteConfirmCategory(category)}
                 >
                   削除

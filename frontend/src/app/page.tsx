@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, RefObject, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
@@ -10,41 +10,58 @@ type TaskFormState = {
   title: string;
   category: string;
   due_at: string;
+  due_time: string;
   status: TaskStatus;
 };
 
 type DueFilter = "today" | "next7days" | "all";
+type SectionKey = "overdue" | "today" | "upcoming" | "completed";
+type TaskSort = "dueAsc" | "dueDesc" | "createdDesc" | "createdAsc" | "titleAsc";
+type DuePickerMode = "create" | "task";
+type DuePickerPosition = {
+  top: number;
+  left: number;
+};
 
 const initialForm: TaskFormState = {
   title: "",
   category: "",
   due_at: "",
+  due_time: "",
   status: "pending"
 };
 
+const weekLabels = ["日", "月", "火", "水", "木", "金", "土"];
+const dueTimeOptions = Array.from({ length: 48 }, (_, index) => {
+  const hours = String(Math.floor(index / 2)).padStart(2, "0");
+  const minutes = index % 2 === 0 ? "00" : "30";
+  return `${hours}:${minutes}`;
+});
+
 function formatDueAt(dueAt: string | null): string {
-  if (!dueAt) return "期限未設定";
-  return new Date(`${dueAt}T00:00:00`).toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
+  if (!dueAt) return "期限なし";
+  const date = new Date(dueAt);
+  const dateLabel = date.toLocaleDateString("ja-JP", {
+    month: "numeric",
+    day: "numeric"
   });
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  if (hours === "00" && minutes === "00") return dateLabel;
+  return `${dateLabel} ${hours}:${minutes}`;
 }
 
-function dueTone(dueAt: string | null, status: TaskStatus): string {
-  if (!dueAt) return "bg-stone-200 text-stone-700";
-  const today = new Date();
-  const todayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const dueKey = new Date(`${dueAt}T00:00:00`).getTime();
-  if (status === "pending" && dueKey < todayKey) {
-    return "bg-rose-100 text-rose-700";
-  }
-  return "bg-sky-100 text-sky-800";
+function formatMonthLabel(baseDate: Date): string {
+  return `${baseDate.getFullYear()}年${baseDate.getMonth() + 1}月`;
 }
 
-function toApiDueAt(value: string): string | null {
-  if (!value) return null;
-  return value;
+function formatStartTime(value: string): string {
+  return new Date(value).toLocaleString("ja-JP", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function toDateTimeLocalValue(value: string): string {
@@ -58,14 +75,73 @@ function toDateTimeLocalValue(value: string): string {
   ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function formatStartTime(value: string): string {
-  return new Date(value).toLocaleString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+function toLocalDateInputValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalTimeValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function startOfDayMs(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function parseDueMs(value: string | null): number | null {
+  if (!value) return null;
+  return new Date(value).getTime();
+}
+
+function hasExplicitDueTime(value: string | null): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return date.getHours() !== 0 || date.getMinutes() !== 0;
+}
+
+function combineDueDateTime(dateValue: string, timeValue: string): string | null {
+  if (!dateValue) return null;
+  const normalizedTime = timeValue || "00:00";
+  const iso = new Date(`${dateValue}T${normalizedTime}:00`).toISOString();
+  return iso;
+}
+
+function isToday(value: string | null): boolean {
+  const due = parseDueMs(value);
+  if (due === null) return false;
+  const date = new Date(due);
+  const today = new Date();
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+}
+
+function isSameLocalDate(value: string | null, baseDate: Date): boolean {
+  const due = parseDueMs(value);
+  if (due === null) return false;
+  const date = new Date(due);
+  return (
+    date.getFullYear() === baseDate.getFullYear() &&
+    date.getMonth() === baseDate.getMonth() &&
+    date.getDate() === baseDate.getDate()
+  );
+}
+
+function isOverdue(value: string | null): boolean {
+  const due = parseDueMs(value);
+  if (due === null) return false;
+  if (hasExplicitDueTime(value)) {
+    return due < Date.now();
+  }
+  return due < startOfDayMs(new Date());
 }
 
 function statusLabel(status: TaskStatus): string {
@@ -81,20 +157,445 @@ function statusLabel(status: TaskStatus): string {
   }
 }
 
-function isDueWithinFilter(dueAt: string | null, filter: DueFilter): boolean {
-  if (filter === "all") return true;
-  if (!dueAt) return false;
+function dueChipTone(task: Task): string {
+  if (!task.due_at) return "bg-white/6 text-zinc-400";
+  if (isOverdue(task.due_at) && task.status === "pending") return "bg-[#4c241f] text-[#ff7f73]";
+  if (isToday(task.due_at)) return "bg-[#3a2c18] text-[#f1b35f]";
+  return "bg-[#202d52] text-[#8eb0ff]";
+}
 
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const due = new Date(`${dueAt}T00:00:00`).getTime();
-
-  if (filter === "today") {
-    return due === start;
+function compareTasks(a: Task, b: Task, sort: TaskSort): number {
+  if (sort === "titleAsc") {
+    return a.title.localeCompare(b.title, "ja");
   }
 
-  const end = start + 6 * 24 * 60 * 60 * 1000;
-  return due >= start && due <= end;
+  if (sort === "createdDesc") {
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  }
+
+  if (sort === "createdAsc") {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  }
+
+  const aDue = parseDueMs(a.due_at);
+  const bDue = parseDueMs(b.due_at);
+
+  if (aDue === null && bDue === null) {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  }
+  if (aDue === null) return 1;
+  if (bDue === null) return -1;
+
+  if (sort === "dueDesc") {
+    const diff = bDue - aDue;
+    if (diff !== 0) return diff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  }
+
+  const diff = aDue - bDue;
+  if (diff !== 0) return diff;
+  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+}
+
+function getTodayDateString(offsetDays = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCalendarDays(baseDate: Date): Date[] {
+  const firstDay = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const start = new Date(firstDay);
+  start.setDate(start.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const next = new Date(start);
+    next.setDate(start.getDate() + index);
+    return next;
+  });
+}
+
+function isSameDate(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function matchesDueFilter(task: Task, filter: DueFilter): boolean {
+  if (filter === "all") return true;
+  if (!task.due_at) return false;
+
+  const todayDate = new Date();
+  const today = startOfDayMs(todayDate);
+  const due = parseDueMs(task.due_at);
+  if (due === null) return false;
+  const dueDate = new Date(due);
+  const dueDay = startOfDayMs(dueDate);
+
+  if (filter === "today") {
+    return isSameLocalDate(task.due_at, todayDate);
+  }
+
+  return dueDay >= today && dueDay <= today + 6 * 24 * 60 * 60 * 1000;
+}
+
+function IconPlus() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 4v12M4 10h12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconMenu() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 5.5h12M4 10h8M4 14.5h12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="4.5" width="14" height="12" rx="3" />
+      <path d="M6.5 3v3M13.5 3v3M3 8h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconClock() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6.5v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconSpark() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path d="M10 2.8v2.8M10 14.4v2.8M2.8 10h2.8M14.4 10h2.8M5 5l2 2M13 13l2 2M15 5l-2 2M7 13l-2 2" strokeLinecap="round" />
+      <circle cx="10" cy="10" r="3.1" />
+    </svg>
+  );
+}
+
+function IconIdea() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path
+        d="M7.4 14.9h5.2M8 17h4M10 2.7a5.3 5.3 0 0 0-3.5 9.3c.6.5 1 1.2 1.1 2h4.8c.1-.8.5-1.5 1.1-2A5.3 5.3 0 0 0 10 2.7Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconSidebar() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 4v12M13 4v12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconDots() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor">
+      <circle cx="4" cy="10" r="1.5" />
+      <circle cx="10" cy="10" r="1.5" />
+      <circle cx="16" cy="10" r="1.5" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M5 10.5 8.2 14 15 6.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconChevronDown() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="m5.5 7.5 4.5 5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconChevronLeft() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="m11.8 5.5-4.5 4.5 4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconChevronRight() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="m8.2 5.5 4.5 4.5-4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SectionHeader({
+  title,
+  count,
+  tone
+}: {
+  title: string;
+  count: number;
+  tone?: "danger" | "default";
+}) {
+  return (
+    <div className="mb-2 flex items-center gap-3 px-1">
+      <span className="text-zinc-500">
+        <IconChevronDown />
+      </span>
+      <span className={`text-[15px] font-semibold ${tone === "danger" ? "text-zinc-100" : "text-zinc-100"}`}>
+        {title}
+      </span>
+      <span className="text-sm text-zinc-500">{count}</span>
+    </div>
+  );
+}
+
+function TaskRow({
+  task,
+  isActive,
+  isAnimatingComplete,
+  onStart,
+  onStop,
+  isEditingTitle,
+  editingTitleValue,
+  onEditTitleStart,
+  onEditTitleChange,
+  onEditTitleCommit,
+  onEditTitleCancel,
+  isEditingDue,
+  onEditDueStart,
+  isEditingCategory,
+  editingCategoryValue,
+  categoryOptions,
+  categoryMenuRef,
+  categoryTriggerRef,
+  onEditCategoryStart,
+  onEditCategoryChange,
+  onEditCategoryCommit,
+  onEditCategoryCancel,
+  onToggleComplete,
+  onDelete
+}: {
+  task: Task;
+  isActive: boolean;
+  isAnimatingComplete: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  isEditingTitle: boolean;
+  editingTitleValue: string;
+  onEditTitleStart: () => void;
+  onEditTitleChange: (value: string) => void;
+  onEditTitleCommit: () => void;
+  onEditTitleCancel: () => void;
+  isEditingDue: boolean;
+  onEditDueStart: (anchor: HTMLButtonElement) => void;
+  isEditingCategory: boolean;
+  editingCategoryValue: string;
+  categoryOptions: string[];
+  categoryMenuRef: RefObject<HTMLDivElement | null>;
+  categoryTriggerRef: RefObject<HTMLButtonElement | null>;
+  onEditCategoryStart: () => void;
+  onEditCategoryChange: (value: string) => void;
+  onEditCategoryCommit: (value?: string) => void;
+  onEditCategoryCancel: () => void;
+  onToggleComplete: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div
+      className={`group flex items-center gap-4 rounded-[20px] border border-transparent px-4 py-3.5 text-zinc-100 transition ${
+        isAnimatingComplete
+          ? "scale-[0.992] bg-emerald-500/[0.08]"
+          : isActive
+            ? "bg-white/[0.06]"
+            : "hover:border-white/6 hover:bg-white/[0.03]"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleComplete();
+        }}
+        className={`relative flex h-7 w-7 items-center justify-center rounded-[10px] border transition duration-200 ${
+          task.status === "completed"
+            ? "border-white/0 bg-white/10 text-zinc-500"
+            : "border-white/20 bg-transparent text-transparent hover:scale-105 hover:border-[color:var(--accent-strong)] hover:bg-[color:var(--accent-soft)]"
+        }`}
+        aria-label={task.status === "completed" ? "未完了に戻す" : "完了にする"}
+      >
+        {task.status !== "completed" ? (
+          <span className="absolute inset-0 rounded-[10px] opacity-0 transition duration-200 group-hover:opacity-100 group-hover:shadow-[0_0_0_4px_rgba(79,124,255,0.12)]" />
+        ) : null}
+        {isAnimatingComplete ? (
+          <span className="absolute inset-[-4px] animate-ping rounded-[14px] bg-emerald-400/20" />
+        ) : null}
+        {task.status === "completed" ? <IconCheck /> : null}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
+          {isEditingTitle ? (
+            <input
+              autoFocus
+              value={editingTitleValue}
+              onChange={(event) => onEditTitleChange(event.target.value)}
+              onBlur={onEditTitleCommit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onEditTitleCommit();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onEditTitleCancel();
+                }
+              }}
+              className="min-w-0 flex-1 appearance-none rounded-[12px] border border-white/10 bg-[#1f1f1f] px-3 py-2 text-[16px] text-zinc-100 focus:outline-none"
+              aria-label="タスクタイトルを編集"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={onEditTitleStart}
+              className={`truncate text-left text-[16px] transition hover:opacity-80 ${
+                task.status === "completed" ? "text-zinc-500 line-through" : "text-zinc-100"
+              }`}
+            >
+              {task.title}
+            </button>
+          )}
+          {isActive ? (
+            <span className="rounded-full bg-emerald-500/18 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+              実行中
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+          <button
+            type="button"
+            onClick={(event) => onEditDueStart(event.currentTarget)}
+            className={`rounded-full px-2.5 py-1 font-semibold ${dueChipTone(task)} ${
+              isEditingDue ? "ring-1 ring-[color:var(--accent-strong)]" : ""
+            }`}
+          >
+            {formatDueAt(task.due_at)}
+          </button>
+          <div className="relative">
+            <button
+              ref={isEditingCategory ? categoryTriggerRef : null}
+              type="button"
+              onClick={onEditCategoryStart}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${
+                isEditingCategory
+                  ? "border-white/12 bg-white/8 text-zinc-200"
+                  : "border-white/[0.06] bg-white/[0.04] text-zinc-400 hover:border-white/10 hover:bg-white/[0.06]"
+              }`}
+              aria-label={`${task.category}カテゴリを編集`}
+            >
+              <span>{isEditingCategory ? editingCategoryValue : task.category}</span>
+              <span className="text-zinc-600">
+                <IconChevronRight />
+              </span>
+            </button>
+
+            {isEditingCategory ? (
+              <div
+                ref={categoryMenuRef}
+                className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-white/10 bg-[#262626] py-2 shadow-[0_18px_40px_rgba(0,0,0,0.34)]"
+              >
+                {categoryOptions.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                      editingCategoryValue === category ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                    } hover:bg-white/6`}
+                    onClick={() => {
+                      onEditCategoryChange(category);
+                      onEditCategoryCommit(category);
+                    }}
+                  >
+                    <span>{category}</span>
+                    {editingCategoryValue === category ? <IconCheck /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <span className="text-zinc-500">{statusLabel(task.status)}</span>
+        </div>
+      </div>
+
+      <div className="hidden items-center gap-2 opacity-0 transition group-hover:opacity-100 md:flex">
+        {task.status === "pending" ? (
+          isActive ? (
+            <button
+              type="button"
+              className="rounded-full bg-white/8 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
+              onClick={(event) => {
+                event.stopPropagation();
+                onStop();
+              }}
+            >
+              停止
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rounded-full bg-[color:var(--accent)] px-3 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+              onClick={(event) => {
+                event.stopPropagation();
+                onStart();
+              }}
+            >
+              開始
+            </button>
+          )
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            className="rounded-full bg-[#4c241f] px-3 py-2 text-sm font-medium text-[#ff9a90] hover:opacity-90"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+          >
+            削除
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 export default function HomePage() {
@@ -102,14 +603,38 @@ export default function HomePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
   const [form, setForm] = useState<TaskFormState>(initialForm);
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-  const [completedOpen, setCompletedOpen] = useState(true);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null);
+  const [editingTitleTaskId, setEditingTitleTaskId] = useState<number | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState("");
+  const [editingDueTaskId, setEditingDueTaskId] = useState<number | null>(null);
+  const [editingDueValue, setEditingDueValue] = useState("");
+  const [editingDueTimeValue, setEditingDueTimeValue] = useState("");
+  const [editingCategoryTaskId, setEditingCategoryTaskId] = useState<number | null>(null);
+  const [editingCategoryValue, setEditingCategoryValue] = useState("");
+  const [createCategoryMenuOpen, setCreateCategoryMenuOpen] = useState(false);
+  const [animatingCompleteTaskIds, setAnimatingCompleteTaskIds] = useState<number[]>([]);
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
+  const [taskSort, setTaskSort] = useState<TaskSort>("dueAsc");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editingActiveStartTime, setEditingActiveStartTime] = useState(false);
   const [activeStartTimeInput, setActiveStartTimeInput] = useState("");
+  const [duePickerOpen, setDuePickerOpen] = useState(false);
+  const [duePickerMode, setDuePickerMode] = useState<DuePickerMode>("create");
+  const [duePickerPosition, setDuePickerPosition] = useState<DuePickerPosition | null>(null);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const duePickerRef = useRef<HTMLDivElement | null>(null);
+  const dueTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const dueEditTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const categoryMenuRef = useRef<HTMLDivElement | null>(null);
+  const categoryTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const createCategoryMenuRef = useRef<HTMLDivElement | null>(null);
+  const createCategoryTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const elapsedSeconds = useTimer(activeEntry?.start_time ?? null);
   const activeTask = useMemo(
@@ -117,33 +642,52 @@ export default function HomePage() {
     [tasks, activeEntry]
   );
 
-  const { incompleteTasks, filteredIncompleteTasks, completedTasks, totalTrackedTaskCount } = useMemo(() => {
-    const incomplete: Task[] = [];
-    const completed: Task[] = [];
+  const filteredPendingTasks = useMemo(() => {
+    return tasks
+      .filter((task) => task.status === "pending")
+      .filter((task) => (categoryFilter === "all" ? true : task.category === categoryFilter))
+      .filter((task) => matchesDueFilter(task, dueFilter));
+  }, [tasks, categoryFilter, dueFilter]);
+
+  const groupedTasks = useMemo(() => {
+    const groups: Record<SectionKey, Task[]> = {
+      overdue: [],
+      today: [],
+      upcoming: [],
+      completed: []
+    };
 
     for (const task of tasks) {
-      if (task.status === "pending") {
-        incomplete.push(task);
+      if (categoryFilter !== "all" && task.category !== categoryFilter) {
+        continue;
+      }
+
+      if (task.status !== "pending") {
+        groups.completed.push(task);
+        continue;
+      }
+
+      if (!matchesDueFilter(task, dueFilter)) {
+        continue;
+      }
+
+      if (isOverdue(task.due_at)) {
+        groups.overdue.push(task);
+      } else if (isToday(task.due_at)) {
+        groups.today.push(task);
       } else {
-        completed.push(task);
+        groups.upcoming.push(task);
       }
     }
 
-    const filteredIncomplete = incomplete.filter((task) => {
-      if (categoryFilter !== "all" && task.category !== categoryFilter) {
-        return false;
-      }
+    groups.overdue.sort((a, b) => compareTasks(a, b, taskSort));
+    groups.today.sort((a, b) => compareTasks(a, b, taskSort));
+    groups.upcoming.sort((a, b) => compareTasks(a, b, taskSort));
+    groups.completed.sort((a, b) => compareTasks(a, b, taskSort));
+    return groups;
+  }, [tasks, categoryFilter, dueFilter, taskSort]);
 
-      return isDueWithinFilter(task.due_at, dueFilter);
-    });
-
-    return {
-      incompleteTasks: incomplete,
-      filteredIncompleteTasks: filteredIncomplete,
-      completedTasks: completed,
-      totalTrackedTaskCount: tasks.length
-    };
-  }, [tasks, dueFilter, categoryFilter]);
+  const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
 
   async function refreshTasks() {
     const data = await api.listTasks();
@@ -154,12 +698,8 @@ export default function HomePage() {
     const data = await api.listCategories();
     setCategories(data);
     setForm((prev) => {
-      if (data.length === 0) {
-        return { ...prev, category: "" };
-      }
-      if (prev.category && data.some((category) => category.name === prev.category)) {
-        return prev;
-      }
+      if (data.length === 0) return { ...prev, category: "" };
+      if (prev.category && data.some((category) => category.name === prev.category)) return prev;
       return { ...prev, category: data[0].name };
     });
   }
@@ -167,7 +707,6 @@ export default function HomePage() {
   async function syncActiveEntry() {
     const response = await api.getActiveTimer();
     setActiveEntry(response.active_entry);
-    return response.active_entry;
   }
 
   useEffect(() => {
@@ -182,12 +721,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (categoryFilter === "all") return;
-    if (categories.some((category) => category.name === categoryFilter)) return;
-    setCategoryFilter("all");
-  }, [categories, categoryFilter]);
-
-  useEffect(() => {
     if (!activeEntry) {
       setEditingActiveStartTime(false);
       setActiveStartTimeInput("");
@@ -197,6 +730,83 @@ export default function HomePage() {
     setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
   }, [activeEntry]);
 
+  useEffect(() => {
+    if (!duePickerOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (duePickerRef.current?.contains(target)) return;
+      if (dueTriggerRef.current?.contains(target)) return;
+      if (dueEditTriggerRef.current?.contains(target)) return;
+      setDuePickerOpen(false);
+      setTimePickerOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setDuePickerOpen(false);
+        setTimePickerOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [duePickerOpen]);
+
+  useEffect(() => {
+    if (!editingCategoryTaskId) return;
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (categoryMenuRef.current?.contains(target)) return;
+      if (categoryTriggerRef.current?.contains(target)) return;
+      setEditingCategoryTaskId(null);
+      setEditingCategoryValue("");
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setEditingCategoryTaskId(null);
+        setEditingCategoryValue("");
+      }
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editingCategoryTaskId]);
+
+  useEffect(() => {
+    if (!createCategoryMenuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (createCategoryMenuRef.current?.contains(target)) return;
+      if (createCategoryTriggerRef.current?.contains(target)) return;
+      setCreateCategoryMenuOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setCreateCategoryMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [createCategoryMenuOpen]);
+
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!form.title || !form.category) return;
@@ -204,10 +814,17 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      await api.createTask({ ...form, due_at: toApiDueAt(form.due_at) });
-      setForm(initialForm);
-      await refreshCategories();
+      await api.createTask({
+        title: form.title,
+        category: form.category,
+        due_at: combineDueDateTime(form.due_at, form.due_time),
+        status: form.status
+      });
+      setForm((prev) => ({ ...initialForm, category: prev.category }));
+      setDuePickerOpen(false);
+      setTimePickerOpen(false);
       await refreshTasks();
+      await refreshCategories();
     } catch (err) {
       setError(err instanceof Error ? err.message : "タスク作成に失敗しました");
     } finally {
@@ -224,19 +841,8 @@ export default function HomePage() {
       await refreshTasks();
     } catch (err) {
       const message = err instanceof Error ? err.message : "タイマー開始に失敗しました";
-
-      if (message.includes("Task timer is already running")) {
-        try {
-          await Promise.all([refreshTasks(), syncActiveEntry()]);
-          setError("このタスクのタイマーは既に進行中です。表示を同期しました。");
-          return;
-        } catch {
-          setError("タイマーは既に進行中ですが、状態の再同期に失敗しました");
-          return;
-        }
-      }
-
       setError(message);
+      await syncActiveEntry();
     } finally {
       setLoading(false);
     }
@@ -268,7 +874,7 @@ export default function HomePage() {
       setActiveEntry(response.active_entry);
       setEditingActiveStartTime(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "開始時間の更新に失敗しました");
+      setError(err instanceof Error ? err.message : "開始時刻の更新に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -279,12 +885,14 @@ export default function HomePage() {
     setError("");
     try {
       await api.updateTask(taskId, { status: "completed" });
-      if (activeEntry?.task_id === taskId) {
-        setActiveEntry(null);
-      }
+      setAnimatingCompleteTaskIds((prev) => [...new Set([...prev, taskId])]);
+      window.setTimeout(() => {
+        setAnimatingCompleteTaskIds((prev) => prev.filter((id) => id !== taskId));
+      }, 650);
+      if (activeEntry?.task_id === taskId) setActiveEntry(null);
       await refreshTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "完了への更新に失敗しました");
+      setError(err instanceof Error ? err.message : "タスク更新に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -297,536 +905,935 @@ export default function HomePage() {
       await api.updateTask(taskId, { status: "pending" });
       await refreshTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "未完了への戻しに失敗しました");
+      setError(err instanceof Error ? err.message : "タスク更新に失敗しました");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleDeleteCompleted(taskId: number): Promise<boolean> {
+  async function handleDelete(taskId: number): Promise<boolean> {
     setLoading(true);
     setError("");
     try {
       await api.deleteTask(taskId);
-      if (activeEntry?.task_id === taskId) {
-        setActiveEntry(null);
-      }
+      if (activeEntry?.task_id === taskId) setActiveEntry(null);
       await refreshTasks();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "タスクの削除に失敗しました");
+      setError(err instanceof Error ? err.message : "タスク削除に失敗しました");
       return false;
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    if (!deleteConfirmTask) return;
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setDeleteConfirmTask(null);
+  async function handleSaveTaskTitle(task: Task) {
+    const nextTitle = editingTitleValue.trim();
+    if (!nextTitle) {
+      setEditingTitleTaskId(null);
+      setEditingTitleValue("");
+      return;
+    }
+    if (nextTitle === task.title) {
+      setEditingTitleTaskId(null);
+      setEditingTitleValue("");
+      return;
     }
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteConfirmTask]);
+    setLoading(true);
+    setError("");
+    try {
+      await api.updateTask(task.id, {
+        title: nextTitle
+      });
+      setEditingTitleTaskId(null);
+      setEditingTitleValue("");
+      await refreshTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "タイトル更新に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveTaskDue(task: Task, nextDueDate?: string) {
+    const dueDate = (nextDueDate ?? editingDueValue).trim();
+    const nextDueAt = dueDate ? combineDueDateTime(dueDate, editingDueTimeValue) : null;
+    if (nextDueAt === task.due_at) {
+      setEditingDueTaskId(null);
+      setEditingDueValue("");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await api.updateTask(task.id, {
+        due_at: nextDueAt
+      });
+      setEditingDueTaskId(null);
+      setEditingDueValue("");
+      setEditingDueTimeValue("");
+      setDuePickerOpen(false);
+      setTimePickerOpen(false);
+      await refreshTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "期限更新に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openCreateDuePicker() {
+    setDuePickerMode("create");
+    setDuePickerPosition(null);
+    setTimePickerOpen(false);
+    setDuePickerOpen((open) => !open);
+  }
+
+  function openTaskDuePicker(task: Task, anchor: HTMLButtonElement) {
+    dueEditTriggerRef.current = anchor;
+    setDuePickerMode("task");
+    setEditingDueTaskId(task.id);
+    setEditingDueValue(toLocalDateInputValue(task.due_at));
+    setEditingDueTimeValue(toLocalTimeValue(task.due_at));
+    const due = parseDueMs(task.due_at);
+    const baseDate = due === null ? new Date() : new Date(due);
+    setCalendarMonth(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1));
+    const rect = anchor.getBoundingClientRect();
+    const pickerWidth = 380;
+    const margin = 12;
+    const left = Math.max(
+      margin,
+      Math.min(rect.left, window.innerWidth - pickerWidth - margin)
+    );
+    setDuePickerPosition({
+      top: rect.bottom + 10,
+      left
+    });
+    setTimePickerOpen(false);
+    setDuePickerOpen(true);
+  }
+
+  const currentDueDate = duePickerMode === "create" ? form.due_at : editingDueValue;
+  const currentDueTime = duePickerMode === "create" ? form.due_time : editingDueTimeValue;
+
+  function setCurrentDueDate(value: string) {
+    if (duePickerMode === "create") {
+      setForm((prev) => ({ ...prev, due_at: value }));
+      return;
+    }
+    setEditingDueValue(value);
+  }
+
+  function setCurrentDueTime(value: string) {
+    if (duePickerMode === "create") {
+      setForm((prev) => ({ ...prev, due_time: value }));
+      return;
+    }
+    setEditingDueTimeValue(value);
+  }
+
+  function clearCurrentDue() {
+    if (duePickerMode === "create") {
+      setForm((prev) => ({ ...prev, due_at: "", due_time: "" }));
+      return;
+    }
+    setEditingDueValue("");
+    setEditingDueTimeValue("");
+  }
+
+  async function handleSaveTaskCategory(task: Task, nextCategory?: string) {
+    const category = (nextCategory ?? editingCategoryValue).trim();
+    if (!category || category === task.category) {
+      setEditingCategoryTaskId(null);
+      setEditingCategoryValue("");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await api.updateTask(task.id, {
+        category
+      });
+      setEditingCategoryTaskId(null);
+      setEditingCategoryValue("");
+      await refreshTasks();
+      await refreshCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "カテゴリ更新に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const selectedDue = currentDueDate ? new Date(`${currentDueDate}T00:00:00`) : null;
+  const pendingCount = filteredPendingTasks.length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pb-8">
       {deleteConfirmTask ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={() => setDeleteConfirmTask(null)}
         >
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="delete-confirm-title"
             className="w-full max-w-md rounded-[28px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-6 shadow-[var(--shadow)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--danger)]">
-              Delete Task
-            </p>
-            <h2
-              id="delete-confirm-title"
-              className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]"
-            >
-              タスクを削除しますか
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
+            <p className="text-sm font-semibold text-zinc-100">タスクを削除しますか</p>
+            <p className="mt-3 text-sm leading-6 text-zinc-400">
               「{deleteConfirmTask.title}」を削除すると、関連する作業ログも含めて元に戻せません。
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
-                className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white/80"
-                disabled={loading}
+                className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
                 onClick={() => setDeleteConfirmTask(null)}
               >
                 キャンセル
               </button>
               <button
                 type="button"
-                className="rounded-full bg-[color:var(--danger)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                disabled={loading}
+                className="rounded-full bg-[#4c241f] px-4 py-2 text-sm font-medium text-[#ff9a90]"
                 onClick={async () => {
-                  const ok = await handleDeleteCompleted(deleteConfirmTask.id);
+                  const ok = await handleDelete(deleteConfirmTask.id);
                   if (ok) setDeleteConfirmTask(null);
                 }}
               >
-                削除する
+                削除
               </button>
             </div>
           </div>
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-[36px] border border-[color:var(--line)] bg-[color:var(--surface)] shadow-[var(--shadow)] backdrop-blur">
-        <div className="grid gap-8 px-6 py-8 lg:grid-cols-[1.45fr_0.9fr] lg:px-8 lg:py-9">
-          <div className="space-y-6">
-            <div className="space-y-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--accent)]">
-                Daily Focus
-              </p>
-              <div className="space-y-3">
-                <h1 className="max-w-2xl font-[family-name:var(--font-serif)] text-4xl leading-tight text-[color:var(--text)] sm:text-5xl">
-                  今やるべきことを、静かに一つずつ進めるためのワークスペース。
-                </h1>
-                <p className="max-w-xl text-sm leading-7 text-[color:var(--muted)] sm:text-base">
-                  タスクの追加、実行中の集中、完了までをひとつの流れに整理しました。主役は常に現在のタスクです。
-                </p>
-              </div>
-            </div>
+      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] px-5 py-5 shadow-[var(--shadow)] sm:px-7 sm:py-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-zinc-300 hover:bg-white/6"
+            >
+              <IconMenu />
+            </button>
+            <h1 className="text-[32px] font-semibold tracking-[-0.04em] text-zinc-50">今日</h1>
+          </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[28px] border border-[color:var(--line)] bg-white/70 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted)]">
-                  Open Tasks
-                </p>
-                <p className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
-                  {incompleteTasks.length}
-                </p>
+          <div className="flex items-center gap-2 text-zinc-400">
+            <Link
+              href="/dashboard"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent hover:bg-white/6"
+            >
+              <IconIdea />
+            </Link>
+            <Link
+              href="/time-entries"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent hover:bg-white/6"
+            >
+              <IconSidebar />
+            </Link>
+            <Link
+              href="/categories"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-transparent hover:bg-white/6"
+            >
+              <IconDots />
+            </Link>
+          </div>
+        </div>
+
+        <form className="relative mt-6" onSubmit={handleCreateTask}>
+          <div className="rounded-[20px] border border-white/[0.03] bg-[#222222] p-2">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[16px] px-3 py-2.5">
+                <span className="text-zinc-500">
+                  <IconPlus />
+                </span>
+                <input
+                  value={form.title}
+                  onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="タスクを追加する"
+                  className="min-w-0 flex-1 bg-transparent text-[17px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+                />
               </div>
-              <div className="rounded-[28px] border border-[color:var(--line)] bg-white/70 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted)]">
-                  Completed
-                </p>
-                <p className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
-                  {completedTasks.length}
-                </p>
-              </div>
-              <div className="rounded-[28px] border border-[color:var(--line)] bg-white/70 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted)]">
-                  Logged Tasks
-                </p>
-                <p className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
-                  {totalTrackedTaskCount}
-                </p>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <button
+                    ref={createCategoryTriggerRef}
+                    type="button"
+                    disabled={categories.length === 0}
+                    onClick={() => setCreateCategoryMenuOpen((open) => !open)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-3 py-2 text-sm ${
+                      createCategoryMenuOpen
+                        ? "border-white/12 bg-white/8 text-zinc-200"
+                        : "border-white/[0.06] bg-white/[0.04] text-zinc-400 hover:border-white/10 hover:bg-white/[0.06]"
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    <span>{categories.length === 0 ? "カテゴリ未設定" : form.category}</span>
+                    <span className="text-zinc-600">
+                      <IconChevronRight />
+                    </span>
+                  </button>
+
+                  {createCategoryMenuOpen && categories.length > 0 ? (
+                    <div
+                      ref={createCategoryMenuRef}
+                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-white/10 bg-[#262626] py-2 shadow-[0_18px_40px_rgba(0,0,0,0.34)]"
+                    >
+                      {categories.map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                            form.category === category.name ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                          } hover:bg-white/6`}
+                          onClick={() => {
+                            setForm((prev) => ({ ...prev, category: category.name }));
+                            setCreateCategoryMenuOpen(false);
+                          }}
+                        >
+                          <span>{category.name}</span>
+                          {form.category === category.name ? <IconCheck /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <button
+                  ref={dueTriggerRef}
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/10"
+                  onClick={openCreateDuePicker}
+                >
+                  <IconCalendar />
+                  <span>
+                    {form.due_at
+                      ? formatDueAt(combineDueDateTime(form.due_at, form.due_time))
+                      : "期限"}
+                  </span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={loading || categories.length === 0 || !form.title}
+                  className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)] disabled:opacity-50"
+                >
+                  追加
+                </button>
               </div>
             </div>
           </div>
 
-          <aside className="rounded-[32px] border border-[color:var(--line)] bg-[linear-gradient(160deg,rgba(16,76,71,0.98),rgba(28,57,60,0.96))] p-6 text-white shadow-[var(--shadow)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.28em] text-teal-100/80">
-                  Active Session
-                </p>
-                <h2 className="mt-2 font-[family-name:var(--font-serif)] text-3xl">
-                  {activeTask ? "集中中" : "待機中"}
-                </h2>
+          {duePickerOpen ? (
+            <div
+              ref={duePickerRef}
+              className={`z-30 w-full max-w-[380px] rounded-[24px] border border-white/10 bg-[#262626] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.44)] ${
+                duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
+              }`}
+              style={
+                duePickerMode === "task" && duePickerPosition
+                  ? { top: duePickerPosition.top, left: duePickerPosition.left }
+                  : undefined
+              }
+            >
+              <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-white/5 p-1">
+                <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-zinc-100">
+                  期日
+                </button>
+                <button type="button" className="rounded-[12px] px-4 py-2.5 text-sm font-medium text-zinc-500">
+                  期間
+                </button>
               </div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold tracking-[0.2em] text-teal-50">
-                <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                LIVE
-              </span>
-            </div>
 
-            <div className="mt-8 rounded-[28px] border border-white/10 bg-white/10 p-5">
-              <p className="text-sm text-teal-50/70">現在のタスク</p>
-              <p className="mt-2 text-2xl font-semibold leading-snug">
-                {activeTask ? activeTask.title : "まだ開始されていません"}
-              </p>
-              <p className="mt-5 text-5xl font-semibold tracking-[-0.04em] text-white sm:text-6xl">
-                {formatSeconds(elapsedSeconds)}
-              </p>
-              <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,#5eead4,#fef3c7)]"
-                  style={{ width: activeTask ? `${Math.min(100, (elapsedSeconds / 7200) * 100)}%` : "12%" }}
-                />
+              <div className="mt-4 grid grid-cols-4 gap-2 text-zinc-300">
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString())}
+                >
+                  <span className="text-zinc-300">
+                    <IconSpark />
+                  </span>
+                  <span>今日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString(1))}
+                >
+                  <span className="text-zinc-300">
+                    <IconIdea />
+                  </span>
+                  <span>明日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={() => setCurrentDueDate(getTodayDateString(7))}
+                >
+                  <span className="text-zinc-300">
+                    <IconCalendar />
+                  </span>
+                  <span>+7日</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
+                  onClick={clearCurrentDue}
+                >
+                  <span className="text-zinc-300">
+                    <IconClock />
+                  </span>
+                  <span>なし</span>
+                </button>
               </div>
-              <p className="mt-4 text-sm text-teal-50/75">
-                {activeTask
-                  ? `カテゴリ: ${activeTask.category} / ${formatDueAt(activeTask.due_at)}`
-                  : "未完了タスクから 1 件選んで開始してください"}
-              </p>
-              {activeTask && activeEntry ? (
-                <div className="mt-5">
-                  <p className="text-sm text-teal-50/75">
-                    開始時刻 {formatStartTime(activeEntry.start_time)}
-                  </p>
-                  {editingActiveStartTime ? (
-                    <div className="mt-3 space-y-3">
-                      <input
-                        type="datetime-local"
-                        className="w-full rounded-[18px] border border-white/20 bg-white/12 px-4 py-3 text-sm text-white focus:border-white/40 focus:bg-white/18"
-                        value={activeStartTimeInput}
-                        max={toDateTimeLocalValue(new Date().toISOString())}
-                        onChange={(event) => setActiveStartTimeInput(event.target.value)}
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={loading || !activeStartTimeInput}
-                          className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-[color:var(--accent-strong)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={() => void handleUpdateActiveStartTime()}
-                        >
-                          開始時刻を保存
-                        </button>
-                        <button
-                          type="button"
-                          disabled={loading}
-                          className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={() => {
-                            setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
-                            setEditingActiveStartTime(false);
-                          }}
-                        >
-                          キャンセル
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={loading}
-                        className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={() => setEditingActiveStartTime(true)}
-                      >
-                        開始時刻を修正
-                      </button>
-                    </div>
-                  )}
+
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-[15px] font-medium tracking-[-0.02em] text-zinc-100">
+                  {formatMonthLabel(calendarMonth)}
+                </p>
+                <div className="flex items-center gap-1 text-zinc-400">
                   <button
                     type="button"
-                    disabled={loading}
-                    className="mt-3 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void handleStop(activeTask.id)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
+                    onClick={() =>
+                      setCalendarMonth(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                      )
+                    }
                   >
-                    このセッションを停止
+                    <IconChevronLeft />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
+                    onClick={() =>
+                      setCalendarMonth(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                      )
+                    }
+                  >
+                    <IconChevronRight />
                   </button>
                 </div>
-              ) : null}
-              <div className="mt-4">
-                <Link
-                  href="/time-entries"
-                  className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+              </div>
+
+              <div className="mt-4 grid grid-cols-7 gap-y-2 text-center text-xs text-zinc-500">
+                {weekLabels.map((label) => (
+                  <div key={label}>{label}</div>
+                ))}
+              </div>
+
+              <div className="mt-3 grid grid-cols-7 gap-y-1 text-center">
+                {calendarDays.map((day) => {
+                  const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                  const isSelected = selectedDue ? isSameDate(day, selectedDue) : false;
+                  const isCurrentDay = isSameDate(day, new Date());
+
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      type="button"
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-[14px] transition ${
+                        isSelected
+                          ? "bg-[color:var(--accent)] text-white"
+                          : isCurrentDay
+                            ? "bg-[#24355f] text-[#9bb6ff]"
+                            : isCurrentMonth
+                              ? "text-zinc-100 hover:bg-white/8"
+                              : "text-zinc-600 hover:bg-white/6"
+                      }`}
+                      onClick={() => setCurrentDueDate(toDateKey(day))}
+                    >
+                      {day.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 space-y-2 border-t border-white/8 pt-4 text-zinc-300">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-[18px] px-1 py-1.5 text-left hover:bg-white/4"
+                  onClick={() => setTimePickerOpen((open) => !open)}
                 >
-                  時間一覧を開く
-                </Link>
+                  <span className="inline-flex items-center gap-2 text-sm">
+                    <IconClock />
+                    時刻
+                  </span>
+                  <span className="inline-flex items-center gap-2 text-sm text-zinc-500">
+                    {currentDueTime || "未設定"}
+                    <IconChevronRight />
+                  </span>
+                </button>
+                {timePickerOpen ? (
+                  <div className="rounded-[18px] border border-white/8 bg-white/4 py-2">
+                    <div className="max-h-56 overflow-y-auto">
+                      <button
+                        type="button"
+                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
+                          currentDueTime === "" ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                        }`}
+                        onClick={() => setCurrentDueTime("")}
+                      >
+                        <span>時刻なし</span>
+                        {currentDueTime === "" ? <IconCheck /> : null}
+                      </button>
+                      {dueTimeOptions.map((time) => (
+                        <button
+                          key={time}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
+                            currentDueTime === time ? "text-[color:var(--accent-strong)]" : "text-zinc-200"
+                          }`}
+                          onClick={() => setCurrentDueTime(time)}
+                        >
+                          <span>{time}</span>
+                          {currentDueTime === time ? <IconCheck /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="flex items-center justify-between rounded-[18px] px-1 py-1.5">
+                  <span className="inline-flex items-center gap-2 text-sm">
+                    <IconSpark />
+                    リマインダー
+                  </span>
+                  <span className="inline-flex items-center gap-2 text-sm text-zinc-500">
+                    未設定
+                    <IconChevronRight />
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-between gap-3">
+                <button
+                  type="button"
+                  className="rounded-[16px] border border-white/10 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/6"
+                  onClick={clearCurrentDue}
+                >
+                  クリア
+                </button>
+                <button
+                  type="button"
+                  className="rounded-[16px] bg-[color:var(--accent)] px-7 py-2.5 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+                  onClick={() => {
+                    if (duePickerMode === "task") {
+                      const task = tasks.find((item) => item.id === editingDueTaskId);
+                      if (task) {
+                        void handleSaveTaskDue(task);
+                        return;
+                      }
+                    }
+                    setDuePickerOpen(false);
+                    setTimePickerOpen(false);
+                  }}
+                >
+                  OK
+                </button>
               </div>
             </div>
-          </aside>
+          ) : null}
+        </form>
+
+        {error ? (
+          <p className="mt-4 rounded-[18px] bg-[#4c241f] px-4 py-3 text-sm text-[#ff9a90]">{error}</p>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "all" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            onClick={() => setDueFilter("all")}
+          >
+            すべて
+          </button>
+          <button
+            type="button"
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "today" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            onClick={() => setDueFilter("today")}
+          >
+            今日
+          </button>
+          <button
+            type="button"
+            className={`rounded-full px-3 py-2 text-sm ${dueFilter === "next7days" ? "bg-white/10 text-zinc-100" : "bg-white/5 text-zinc-400 hover:bg-white/8"}`}
+            onClick={() => setDueFilter("next7days")}
+          >
+            7日以内
+          </button>
+
+          <div className="ml-auto flex items-center gap-3">
+            <div className="rounded-full bg-white/5 px-3 py-2 text-sm text-zinc-400">
+              {pendingCount} 件
+            </div>
+            <select
+              value={taskSort}
+              onChange={(event) => setTaskSort(event.target.value as TaskSort)}
+              className="rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 focus:outline-none"
+            >
+              <option value="dueAsc">期限が近い順</option>
+              <option value="dueDesc">期限が遠い順</option>
+              <option value="createdDesc">新しい順</option>
+              <option value="createdAsc">古い順</option>
+              <option value="titleAsc">名前順</option>
+            </select>
+            <select
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+              className="rounded-full border border-white/8 bg-white/5 px-3 py-2 text-sm text-zinc-300 focus:outline-none"
+            >
+              <option value="all">全カテゴリ</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.name}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </section>
 
-      {error ? (
-        <p className="rounded-[24px] border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700 shadow-sm">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.95fr]">
-        <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--accent)]">
-                Capture Task
-              </p>
-              <h2 className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]">
-                新しいタスクを追加
-              </h2>
-            </div>
-            <p className="max-w-xs text-right text-sm leading-6 text-[color:var(--muted)]">
-              カテゴリは事前登録制です。期限もここで決めておくと、着手順を迷いにくくなります。
-            </p>
-          </div>
-
-          <form className="mt-6 grid gap-3 md:grid-cols-2" onSubmit={handleCreateTask}>
-            <label className="space-y-2 md:col-span-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">タイトル</span>
-              <input
-                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] placeholder:text-stone-400 focus:border-[color:var(--accent)] focus:bg-white"
-                placeholder="例: 提案資料の骨子をまとめる"
-                value={form.title}
-                onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
-              />
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">カテゴリ</span>
-              <select
-                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] placeholder:text-stone-400 focus:border-[color:var(--accent)] focus:bg-white"
-                value={form.category}
-                disabled={categories.length === 0}
-                onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
-              >
-                {categories.length === 0 ? (
-                  <option value="">カテゴリを先に登録してください</option>
-                ) : (
-                  categories.map((category) => (
-                    <option key={category.id} value={category.name}>
-                      {category.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">期限</span>
-              <input
-                type="date"
-                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
-                value={form.due_at}
-                onChange={(event) => setForm((prev) => ({ ...prev, due_at: event.target.value }))}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={loading || categories.length === 0}
-              className="md:col-span-2 inline-flex items-center justify-center rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              タスクを追加
-            </button>
-          </form>
-
-          {categories.length === 0 ? (
-            <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-              まだカテゴリがありません。
-              <Link href="/categories" className="ml-2 font-semibold text-[color:var(--accent)]">
-                カテゴリ管理へ
-              </Link>
-            </p>
-          ) : null}
-        </section>
-
-        <section className="flex max-h-[720px] flex-col rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--accent)]">
-                Queue
-              </p>
-              <h2 className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]">
-                未完了タスク
-              </h2>
-            </div>
-            <p className="text-sm text-[color:var(--muted)]">
-              {filteredIncompleteTasks.length} / {incompleteTasks.length} items
-            </p>
-          </div>
-
-          <div className="mt-6 grid gap-3 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">期限で絞り込む</span>
-              <select
-                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
-                value={dueFilter}
-                onChange={(event) => setDueFilter(event.target.value as DueFilter)}
-              >
-                <option value="today">今日</option>
-                <option value="next7days">次の7日間</option>
-                <option value="all">全て</option>
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-semibold text-[color:var(--text)]">カテゴリで絞り込む</span>
-              <select
-                className="w-full rounded-[22px] border border-[color:var(--line)] bg-white/75 px-4 py-3 text-sm text-[color:var(--text)] focus:border-[color:var(--accent)] focus:bg-white"
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-              >
-                <option value="all">全て</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.name}>
-                    {category.name}
-                  </option>
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-3 shadow-[var(--shadow)] sm:p-4">
+          {groupedTasks.overdue.length > 0 ? (
+            <div className="mb-3">
+              <SectionHeader title="遅延" count={groupedTasks.overdue.length} tone="danger" />
+              <ul className="divide-y divide-white/[0.03]">
+                {groupedTasks.overdue.map((task) => (
+                  <li key={task.id}>
+                    <TaskRow
+                      task={task}
+                      isActive={activeEntry?.task_id === task.id}
+                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                      onStart={() => void handleStart(task.id)}
+                      onStop={() => void handleStop(task.id)}
+                      isEditingTitle={editingTitleTaskId === task.id}
+                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                      onEditTitleStart={() => {
+                        setEditingTitleTaskId(task.id);
+                        setEditingTitleValue(task.title);
+                      }}
+                      onEditTitleChange={setEditingTitleValue}
+                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                      onEditTitleCancel={() => {
+                        setEditingTitleTaskId(null);
+                        setEditingTitleValue("");
+                      }}
+                      isEditingDue={editingDueTaskId === task.id}
+                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
+                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                      onEditDueChange={setEditingDueValue}
+                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
+                      onEditDueCancel={() => {
+                        setEditingDueTaskId(null);
+                        setEditingDueValue("");
+                      }}
+                      isEditingCategory={editingCategoryTaskId === task.id}
+                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                      categoryOptions={categories.map((category) => category.name)}
+                      categoryMenuRef={categoryMenuRef}
+                      categoryTriggerRef={categoryTriggerRef}
+                      onEditCategoryStart={() => {
+                        setEditingCategoryTaskId(task.id);
+                        setEditingCategoryValue(task.category);
+                      }}
+                      onEditCategoryChange={setEditingCategoryValue}
+                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                      onEditCategoryCancel={() => {
+                        setEditingCategoryTaskId(null);
+                        setEditingCategoryValue("");
+                      }}
+                      onToggleComplete={() => void handleComplete(task.id)}
+                    />
+                  </li>
                 ))}
-              </select>
-            </label>
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="mb-3">
+            <SectionHeader title="今日" count={groupedTasks.today.length} />
+            {groupedTasks.today.length === 0 ? (
+              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">今日のタスクはありません</div>
+            ) : (
+              <ul className="divide-y divide-white/[0.03]">
+                {groupedTasks.today.map((task) => (
+                  <li key={task.id}>
+                    <TaskRow
+                      task={task}
+                      isActive={activeEntry?.task_id === task.id}
+                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                      onStart={() => void handleStart(task.id)}
+                      onStop={() => void handleStop(task.id)}
+                      isEditingTitle={editingTitleTaskId === task.id}
+                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                      onEditTitleStart={() => {
+                        setEditingTitleTaskId(task.id);
+                        setEditingTitleValue(task.title);
+                      }}
+                      onEditTitleChange={setEditingTitleValue}
+                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                      onEditTitleCancel={() => {
+                        setEditingTitleTaskId(null);
+                        setEditingTitleValue("");
+                      }}
+                      isEditingDue={editingDueTaskId === task.id}
+                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
+                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                      onEditDueChange={setEditingDueValue}
+                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
+                      onEditDueCancel={() => {
+                        setEditingDueTaskId(null);
+                        setEditingDueValue("");
+                      }}
+                      isEditingCategory={editingCategoryTaskId === task.id}
+                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                      categoryOptions={categories.map((category) => category.name)}
+                      categoryMenuRef={categoryMenuRef}
+                      categoryTriggerRef={categoryTriggerRef}
+                      onEditCategoryStart={() => {
+                        setEditingCategoryTaskId(task.id);
+                        setEditingCategoryValue(task.category);
+                      }}
+                      onEditCategoryChange={setEditingCategoryValue}
+                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                      onEditCategoryCancel={() => {
+                        setEditingCategoryTaskId(null);
+                        setEditingCategoryValue("");
+                      }}
+                      onToggleComplete={() => void handleComplete(task.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          <div className="mt-6 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            {filteredIncompleteTasks.length === 0 ? (
-              <div className="rounded-[26px] border border-dashed border-[color:var(--line-strong)] bg-white/50 px-4 py-12 text-center text-sm text-[color:var(--muted)]">
-                条件に合う未完了タスクはありません
-              </div>
+          <div className="mb-3">
+            <SectionHeader title="今後" count={groupedTasks.upcoming.length} />
+            {groupedTasks.upcoming.length === 0 ? (
+              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">今後のタスクはありません</div>
             ) : (
-              <ul className="space-y-3">
-                {filteredIncompleteTasks.map((task) => {
-                  const isActive = activeEntry?.task_id === task.id;
+              <ul className="divide-y divide-white/[0.03]">
+                {groupedTasks.upcoming.map((task) => (
+                  <li key={task.id}>
+                    <TaskRow
+                      task={task}
+                      isActive={activeEntry?.task_id === task.id}
+                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                      onStart={() => void handleStart(task.id)}
+                      onStop={() => void handleStop(task.id)}
+                      isEditingTitle={editingTitleTaskId === task.id}
+                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                      onEditTitleStart={() => {
+                        setEditingTitleTaskId(task.id);
+                        setEditingTitleValue(task.title);
+                      }}
+                      onEditTitleChange={setEditingTitleValue}
+                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                      onEditTitleCancel={() => {
+                        setEditingTitleTaskId(null);
+                        setEditingTitleValue("");
+                      }}
+                      isEditingDue={editingDueTaskId === task.id}
+                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
+                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                      onEditDueChange={setEditingDueValue}
+                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
+                      onEditDueCancel={() => {
+                        setEditingDueTaskId(null);
+                        setEditingDueValue("");
+                      }}
+                      isEditingCategory={editingCategoryTaskId === task.id}
+                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                      categoryOptions={categories.map((category) => category.name)}
+                      categoryMenuRef={categoryMenuRef}
+                      categoryTriggerRef={categoryTriggerRef}
+                      onEditCategoryStart={() => {
+                        setEditingCategoryTaskId(task.id);
+                        setEditingCategoryValue(task.category);
+                      }}
+                      onEditCategoryChange={setEditingCategoryValue}
+                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                      onEditCategoryCancel={() => {
+                        setEditingCategoryTaskId(null);
+                        setEditingCategoryValue("");
+                      }}
+                      onToggleComplete={() => void handleComplete(task.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-                  return (
-                    <li
-                      key={task.id}
-                      className="rounded-[28px] border border-[color:var(--line)] bg-white/72 p-4"
-                    >
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`rounded-full px-3 py-1 text-xs font-semibold ${dueTone(task.due_at, task.status)}`}
-                            >
-                              {formatDueAt(task.due_at)}
-                            </span>
-                            <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
-                              {task.category}
-                            </span>
-                            {isActive ? (
-                              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                実行中
-                              </span>
-                            ) : null}
-                          </div>
-                          <div>
-                            <p className="text-lg font-semibold text-[color:var(--text)]">{task.title}</p>
-                            <p className="mt-1 text-sm text-[color:var(--muted)]">
-                              作成日 {new Date(task.created_at).toLocaleDateString("ja-JP")}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {isActive ? (
-                            <button
-                              className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
-                              onClick={() => void handleStop(task.id)}
-                            >
-                              停止
-                            </button>
-                          ) : (
-                            <button
-                              className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[color:var(--accent-strong)]"
-                              onClick={() => void handleStart(task.id)}
-                            >
-                              開始
-                            </button>
-                          )}
-                          <button
-                            className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white"
-                            onClick={() => void handleComplete(task.id)}
-                          >
-                            完了にする
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
+          <div>
+            <SectionHeader title="完了" count={groupedTasks.completed.length} />
+            {groupedTasks.completed.length === 0 ? (
+              <div className="rounded-[22px] px-4 py-8 text-sm text-zinc-500">完了したタスクはありません</div>
+            ) : (
+              <ul className="divide-y divide-white/[0.03]">
+                {groupedTasks.completed.map((task) => (
+                  <li key={task.id}>
+                    <TaskRow
+                      task={task}
+                      isActive={false}
+                      isAnimatingComplete={false}
+                      onStart={() => undefined}
+                      onStop={() => undefined}
+                      isEditingTitle={editingTitleTaskId === task.id}
+                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                      onEditTitleStart={() => {
+                        setEditingTitleTaskId(task.id);
+                        setEditingTitleValue(task.title);
+                      }}
+                      onEditTitleChange={setEditingTitleValue}
+                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                      onEditTitleCancel={() => {
+                        setEditingTitleTaskId(null);
+                        setEditingTitleValue("");
+                      }}
+                      isEditingDue={editingDueTaskId === task.id}
+                      editingDueValue={editingDueTaskId === task.id ? editingDueValue : toLocalDateInputValue(task.due_at)}
+                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                      onEditDueChange={setEditingDueValue}
+                      onEditDueCommit={(value) => void handleSaveTaskDue(task, value)}
+                      onEditDueCancel={() => {
+                        setEditingDueTaskId(null);
+                        setEditingDueValue("");
+                      }}
+                      isEditingCategory={editingCategoryTaskId === task.id}
+                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                      categoryOptions={categories.map((category) => category.name)}
+                      categoryMenuRef={categoryMenuRef}
+                      categoryTriggerRef={categoryTriggerRef}
+                      onEditCategoryStart={() => {
+                        setEditingCategoryTaskId(task.id);
+                        setEditingCategoryValue(task.category);
+                      }}
+                      onEditCategoryChange={setEditingCategoryValue}
+                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                      onEditCategoryCancel={() => {
+                        setEditingCategoryTaskId(null);
+                        setEditingCategoryValue("");
+                      }}
+                      onToggleComplete={() => void handleReopen(task.id)}
+                      onDelete={() => setDeleteConfirmTask(task)}
+                    />
+                  </li>
+                ))}
               </ul>
             )}
           </div>
         </section>
-      </div>
 
-      <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-6 shadow-[var(--shadow)] backdrop-blur">
-        <button
-          type="button"
-          id="completed-section-toggle"
-          className="flex w-full items-center justify-between gap-3 rounded-[22px] bg-white/55 px-4 py-4 text-left hover:bg-white/75"
-          aria-expanded={completedOpen}
-          aria-controls="completed-task-list"
-          onClick={() => setCompletedOpen((open) => !open)}
-        >
-          <span className="flex items-center gap-3">
-            <span>
-              <p className="text-xs uppercase tracking-[0.28em] text-[color:var(--accent)]">
-                Archive
-              </p>
-              <p className="mt-2 font-[family-name:var(--font-serif)] text-3xl text-[color:var(--text)]">
-                完了済みタスク
-              </p>
-            </span>
-            <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold text-stone-700">
-              {completedTasks.length}
-            </span>
-          </span>
-          <span
-            className={`inline-block text-sm text-[color:var(--muted)] transition-transform duration-200 ${
-              completedOpen ? "rotate-180" : ""
-            }`}
-            aria-hidden
-          >
-            ▼
-          </span>
-        </button>
-
-        {completedOpen ? (
-          completedTasks.length === 0 ? (
-            <div
-              id="completed-task-list"
-              className="mt-5 rounded-[26px] border border-dashed border-[color:var(--line-strong)] bg-white/50 px-4 py-12 text-center text-sm text-[color:var(--muted)]"
-            >
-              完了したタスクはありません
+        <aside className="space-y-4">
+          <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
+            <p className="text-sm text-zinc-500">進行中</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-zinc-50">
+              {activeTask ? activeTask.title : "待機中"}
+            </h2>
+            <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-zinc-50">
+              {formatSeconds(elapsedSeconds)}
+            </p>
+            <div className="mt-4 h-2 rounded-full bg-white/8">
+              <div
+                className="h-full rounded-full bg-[linear-gradient(90deg,#4f7cff,#86a7ff)]"
+                style={{ width: activeTask ? `${Math.min(100, (elapsedSeconds / 7200) * 100)}%` : "0%" }}
+              />
             </div>
-          ) : (
-            <ul id="completed-task-list" className="mt-5 space-y-3">
-              {completedTasks.map((task) => {
-                const isCompleted = task.status === "completed";
-
-                return (
-                  <li
-                    key={task.id}
-                    className="rounded-[28px] border border-[color:var(--line)] bg-white/68 p-4"
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold text-stone-700">
-                            {task.category}
-                          </span>
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${dueTone(task.due_at, task.status)}`}
-                          >
-                            {formatDueAt(task.due_at)}
-                          </span>
-                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                            {statusLabel(task.status)}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-lg font-semibold text-[color:var(--text)]">{task.title}</p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--text)] hover:bg-white"
-                          onClick={() => void handleReopen(task.id)}
-                        >
-                          未完了に戻す
-                        </button>
-                        {isCompleted ? (
-                          <button
-                            type="button"
-                            className="rounded-full bg-[color:var(--danger)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                            onClick={() => setDeleteConfirmTask(task)}
-                          >
-                            削除
-                          </button>
-                        ) : null}
-                      </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full bg-white/6 px-2.5 py-1 text-zinc-400">
+                {activeTask ? activeTask.category : "カテゴリ未選択"}
+              </span>
+              <span className="rounded-full bg-white/6 px-2.5 py-1 text-zinc-400">
+                {activeTask ? formatDueAt(activeTask.due_at) : "期限未設定"}
+              </span>
+            </div>
+            {activeEntry ? (
+              <div className="mt-5 space-y-3">
+                <p className="text-sm text-zinc-500">開始 {formatStartTime(activeEntry.start_time)}</p>
+                {editingActiveStartTime ? (
+                  <div className="space-y-2">
+                    <input
+                      type="datetime-local"
+                      value={activeStartTimeInput}
+                      max={toDateTimeLocalValue(new Date().toISOString())}
+                      onChange={(event) => setActiveStartTimeInput(event.target.value)}
+                      className="w-full rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 focus:outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white"
+                        onClick={() => void handleUpdateActiveStartTime()}
+                      >
+                        保存
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100"
+                        onClick={() => setEditingActiveStartTime(false)}
+                      >
+                        キャンセル
+                      </button>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )
-        ) : null}
-      </section>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/12"
+                      onClick={() => setEditingActiveStartTime(true)}
+                    >
+                      開始時刻を修正
+                    </button>
+                    {activeTask ? (
+                      <button
+                        type="button"
+                        className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+                        onClick={() => void handleStop(activeTask.id)}
+                      >
+                        停止
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="mt-5 text-sm leading-6 text-zinc-500">
+                タスクを開始すると、ここに実行中の情報が表示されます。
+              </p>
+            )}
+          </section>
+
+          <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
+            <p className="text-sm text-zinc-500">サマリー</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+                <span className="text-sm text-zinc-400">未完了</span>
+                <span className="text-lg font-semibold text-zinc-100">{filteredPendingTasks.length}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+                <span className="text-sm text-zinc-400">完了</span>
+                <span className="text-lg font-semibold text-zinc-100">{groupedTasks.completed.length}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-[18px] bg-white/4 px-4 py-3">
+                <span className="text-sm text-zinc-400">期限超過</span>
+                <span className="text-lg font-semibold text-[#ff9a90]">{groupedTasks.overdue.length}</span>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
