@@ -4,12 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Category, Task, TimeEntry
-from app.schemas import TaskCreate, TaskRead, TaskUpdate, TimerActionResponse
+from app.schemas import TaskCreate, TaskRead, TaskUpdate, TimeEntryUpdate, TimerActionResponse
 from app.services.timer_service import (
     get_active_task_timer,
     start_task_timer,
     stop_task_timer,
     stop_task_timer_if_running,
+    update_active_task_timer_start,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -94,6 +95,14 @@ def delete_task(task_id: int, db: Session = Depends(get_db)) -> None:
 def start_timer(task_id: int, db: Session = Depends(get_db)) -> TimerActionResponse:
     entry = start_task_timer(db, task_id)
     return TimerActionResponse(message="Timer started", active_entry=entry)
+
+
+@router.patch("/{task_id}/start", response_model=TimerActionResponse)
+def update_timer_start(
+    task_id: int, payload: TimeEntryUpdate, db: Session = Depends(get_db)
+) -> TimerActionResponse:
+    entry = update_active_task_timer_start(db, task_id, payload.start_time)
+    return TimerActionResponse(message="Timer start updated", active_entry=entry)
 
 
 @router.post("/{task_id}/stop", response_model=TimerActionResponse)

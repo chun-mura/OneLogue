@@ -47,6 +47,20 @@ function toApiDueAt(value: string): string | null {
   return value;
 }
 
+function toDateTimeLocalValue(value: string): string {
+  const date = new Date(value);
+  const pad = (num: number) => String(num).padStart(2, "0");
+
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatStartTime(value: string): string {
+  return new Date(value).toLocaleString("ja-JP", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -94,6 +108,8 @@ export default function HomePage() {
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null);
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [editingActiveStartTime, setEditingActiveStartTime] = useState(false);
+  const [activeStartTimeInput, setActiveStartTimeInput] = useState("");
 
   const elapsedSeconds = useTimer(activeEntry?.start_time ?? null);
   const activeTask = useMemo(
@@ -171,6 +187,13 @@ export default function HomePage() {
     setCategoryFilter("all");
   }, [categories, categoryFilter]);
 
+  useEffect(() => {
+    if (!activeEntry) {
+      setEditingActiveStartTime(false);
+      setActiveStartTimeInput("");
+      return;
+    }
+
     setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
   }, [activeEntry]);
 
@@ -227,6 +250,25 @@ export default function HomePage() {
       setActiveEntry(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "タイマー停止に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdateActiveStartTime() {
+    if (!activeTask || !activeStartTimeInput) return;
+
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.updateTaskStartTime(
+        activeTask.id,
+        new Date(activeStartTimeInput).toISOString()
+      );
+      setActiveEntry(response.active_entry);
+      setEditingActiveStartTime(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "開始時間の更新に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -419,15 +461,61 @@ export default function HomePage() {
               </div>
               <p className="mt-4 text-sm text-teal-50/75">
                 {activeTask
-                  ? `カテゴリ: ${activeTask.category} / 優先度: ${priorityLabel(activeTask.priority)}`
+                  ? `カテゴリ: ${activeTask.category} / ${formatDueAt(activeTask.due_at)}`
                   : "未完了タスクから 1 件選んで開始してください"}
               </p>
-              {activeTask ? (
+              {activeTask && activeEntry ? (
                 <div className="mt-5">
+                  <p className="text-sm text-teal-50/75">
+                    開始時刻 {formatStartTime(activeEntry.start_time)}
+                  </p>
+                  {editingActiveStartTime ? (
+                    <div className="mt-3 space-y-3">
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded-[18px] border border-white/20 bg-white/12 px-4 py-3 text-sm text-white focus:border-white/40 focus:bg-white/18"
+                        value={activeStartTimeInput}
+                        max={toDateTimeLocalValue(new Date().toISOString())}
+                        onChange={(event) => setActiveStartTimeInput(event.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={loading || !activeStartTimeInput}
+                          className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-[color:var(--accent-strong)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => void handleUpdateActiveStartTime()}
+                        >
+                          開始時刻を保存
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => {
+                            setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
+                            setEditingActiveStartTime(false);
+                          }}
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={loading}
+                        className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => setEditingActiveStartTime(true)}
+                      >
+                        開始時刻を修正
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
                     disabled={loading}
-                    className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-3 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => void handleStop(activeTask.id)}
                   >
                     このセッションを停止

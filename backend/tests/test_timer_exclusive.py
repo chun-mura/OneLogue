@@ -12,6 +12,7 @@ from app.services.timer_service import (
     start_task_timer,
     stop_task_timer,
     stop_task_timer_if_running,
+    update_active_task_timer_start,
 )
 
 
@@ -24,8 +25,8 @@ def _create_test_db() -> Session:
 
 def test_starting_another_task_stops_existing_timer() -> None:
     db = _create_test_db()
-    task_a = Task(title="A", category="Work", priority=3, status="pending")
-    task_b = Task(title="B", category="Hobby", priority=2, status="pending")
+    task_a = Task(title="A", category="Work", status="pending")
+    task_b = Task(title="B", category="Hobby", status="pending")
     db.add_all([task_a, task_b])
     db.commit()
     db.refresh(task_a)
@@ -43,7 +44,7 @@ def test_starting_another_task_stops_existing_timer() -> None:
 
 def test_stop_timer_finishes_active_entry() -> None:
     db = _create_test_db()
-    task = Task(title="A", category="Work", priority=3, status="pending")
+    task = Task(title="A", category="Work", status="pending")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -57,7 +58,7 @@ def test_stop_timer_finishes_active_entry() -> None:
 
 def test_summary_like_aggregation_only_counts_closed_entries() -> None:
     db = _create_test_db()
-    task = Task(title="A", category="Work", priority=3, status="pending")
+    task = Task(title="A", category="Work", status="pending")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -81,7 +82,7 @@ def test_summary_like_aggregation_only_counts_closed_entries() -> None:
 
 def test_start_timer_rejects_completed_task() -> None:
     db = _create_test_db()
-    task = Task(title="A", category="Work", priority=3, status="completed")
+    task = Task(title="A", category="Work", status="completed")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -93,7 +94,7 @@ def test_start_timer_rejects_completed_task() -> None:
 
 def test_stop_task_timer_if_running_closes_open_entry() -> None:
     db = _create_test_db()
-    task = Task(title="A", category="Work", priority=3, status="pending")
+    task = Task(title="A", category="Work", status="pending")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -109,8 +110,8 @@ def test_stop_task_timer_if_running_closes_open_entry() -> None:
 
 def test_get_active_task_timer_returns_latest_open_entry() -> None:
     db = _create_test_db()
-    task_a = Task(title="A", category="Work", priority=3, status="pending")
-    task_b = Task(title="B", category="Work", priority=2, status="pending")
+    task_a = Task(title="A", category="Work", status="pending")
+    task_b = Task(title="B", category="Work", status="pending")
     db.add_all([task_a, task_b])
     db.commit()
     db.refresh(task_a)
@@ -124,3 +125,35 @@ def test_get_active_task_timer_returns_latest_open_entry() -> None:
     assert active_entry is not None
     assert active_entry.id == latest.id
     assert active_entry.task_id == task_b.id
+
+
+def test_update_active_task_timer_start_rewrites_running_entry_start_time() -> None:
+    db = _create_test_db()
+    task = Task(title="A", category="Work", status="pending")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    entry = start_task_timer(db, task.id)
+    new_start = entry.start_time - timedelta(minutes=15)
+
+    updated = update_active_task_timer_start(db, task.id, new_start)
+
+    assert updated.id == entry.id
+    assert updated.start_time == new_start
+    assert updated.end_time is None
+
+
+def test_update_active_task_timer_start_rejects_future_time() -> None:
+    db = _create_test_db()
+    task = Task(title="A", category="Work", status="pending")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    start_task_timer(db, task.id)
+
+    with pytest.raises(HTTPException) as excinfo:
+        update_active_task_timer_start(db, task.id, datetime.now(timezone.utc) + timedelta(minutes=1))
+
+    assert excinfo.value.status_code == 422

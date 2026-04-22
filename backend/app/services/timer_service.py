@@ -74,3 +74,35 @@ def stop_task_timer_if_running(db: Session, task_id: int) -> None:
     )
     if active_entry is not None:
         active_entry.end_time = datetime.now(timezone.utc)
+
+
+def update_active_task_timer_start(
+    db: Session, task_id: int, start_time: datetime
+) -> TimeEntry:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    active_entry = db.scalar(
+        select(TimeEntry)
+        .where(TimeEntry.task_id == task_id, TimeEntry.end_time.is_(None))
+        .order_by(TimeEntry.start_time.desc())
+    )
+    if active_entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No running timer for this task",
+        )
+
+    normalized_start = start_time.astimezone(timezone.utc)
+    now = datetime.now(timezone.utc)
+    if normalized_start > now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Start time cannot be in the future",
+        )
+
+    active_entry.start_time = normalized_start
+    db.commit()
+    db.refresh(active_entry)
+    return active_entry

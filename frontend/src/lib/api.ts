@@ -76,6 +76,11 @@ export const api = {
     request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
       method: "POST"
     }),
+  updateTaskStartTime: (taskId: number, start_time: string) =>
+    request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
+      method: "PATCH",
+      body: JSON.stringify({ start_time })
+    }),
   stopTask: (taskId: number) =>
     request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/stop`, {
       method: "POST"
