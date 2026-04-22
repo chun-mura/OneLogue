@@ -25,7 +25,7 @@ export default function RootLayout({
         <div className="relative min-h-screen overflow-hidden">
           <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-white/5 to-transparent" />
           <header className="relative z-10">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-6 lg:px-8">
+            <div className="mx-auto flex max-w-[1800px] items-center justify-between px-5 py-4 sm:px-6 lg:px-8">
               <Link href="/" className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] text-sm font-bold tracking-[0.2em] text-[color:var(--accent)] shadow-[var(--shadow)]">
                   OL
@@ -54,7 +54,7 @@ export default function RootLayout({
             </div>
           </header>
 
-          <main className="relative z-10 mx-auto max-w-6xl px-5 pb-14 pt-2 sm:px-6 lg:px-8">
+          <main className="relative z-10 mx-auto max-w-[1800px] px-5 pb-14 pt-2 sm:px-6 lg:px-8">
             {children}
           </main>
         </div>

@@ -158,6 +158,45 @@ def test_patch_time_entry_updates_start_and_end() -> None:
         app.dependency_overrides.clear()
 
 
+def test_delete_time_entry_removes_entry() -> None:
+    client = _memory_client()
+    try:
+        client.post("/categories", json={"name": "開発"})
+        task_r = client.post(
+            "/tasks",
+            json={
+                "title": "実装する",
+                "category": "開発",
+                "due_at": None,
+                "status": "pending",
+            },
+        )
+        task_id = task_r.json()["id"]
+
+        start_r = client.post(f"/tasks/{task_id}/start")
+        entry_id = start_r.json()["active_entry"]["id"]
+        client.post(f"/tasks/{task_id}/stop")
+
+        delete_r = client.delete(f"/time-entries/{entry_id}")
+        list_r = client.get("/time-entries")
+
+        assert delete_r.status_code == 204
+        assert list_r.status_code == 200
+        assert list_r.json() == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_delete_time_entry_returns_404_for_missing_entry() -> None:
+    client = _memory_client()
+    try:
+        delete_r = client.delete("/time-entries/999")
+
+        assert delete_r.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_time_entry_creates_entry_for_task() -> None:
     client = _memory_client()
     try:

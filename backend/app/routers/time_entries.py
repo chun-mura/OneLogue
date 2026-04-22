@@ -62,3 +62,12 @@ def patch_time_entry(
         end_time=data.get("end_time"),
     )
     return TimeEntryRead.model_validate(entry)
+
+
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_time_entry(entry_id: int, db: Session = Depends(get_db)) -> None:
+    entry = db.get(TimeEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time entry not found")
+    db.delete(entry)
+    db.commit()

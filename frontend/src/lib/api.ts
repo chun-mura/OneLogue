@@ -111,6 +111,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+  deleteTimeEntry: (entryId: number) => request<void>(`/time-entries/${entryId}`, { method: "DELETE" }),
   getSummary: (range: "daily" | "weekly" | "monthly" | "custom", from?: string, to?: string) => {
     const params = new URLSearchParams({ range });
     if (from) params.append("from", from);

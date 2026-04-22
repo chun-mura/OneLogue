@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { api, Category } from "@/lib/api";
+import { formatTokyoDate } from "@/lib/datetime";
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -183,10 +184,7 @@ export default function CategoriesPage() {
                 <div>
                   <p className="text-lg font-semibold text-[color:var(--text)]">{category.name}</p>
                   <p className="mt-1 text-sm text-[color:var(--muted)]">
-                    登録日{" "}
-                    {new Date(category.created_at).toLocaleDateString("ja-JP", {
-                      timeZone: "Asia/Tokyo"
-                    })}
+                    登録日 {formatTokyoDate(category.created_at)}
                   </p>
                 </div>
                 <button

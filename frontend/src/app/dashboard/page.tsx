@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 
 import { api, SummaryItem } from "@/lib/api";
 import { CustomDropdown } from "@/components/custom-dropdown";
+import { parseTokyoDateTimeLocal } from "@/lib/datetime";
 
 type Range = "daily" | "weekly" | "monthly" | "custom";
 
@@ -49,7 +50,11 @@ export default function DashboardPage() {
   async function fetchSummary() {
     setError("");
     try {
-      const summary = await api.getSummary(range, fromDate || undefined, toDate || undefined);
+      const summary = await api.getSummary(
+        range,
+        fromDate ? parseTokyoDateTimeLocal(fromDate) : undefined,
+        toDate ? parseTokyoDateTimeLocal(toDate) : undefined
+      );
       setItems(summary.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "集計取得に失敗しました");

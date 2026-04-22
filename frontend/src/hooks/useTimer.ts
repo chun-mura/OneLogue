@@ -2,12 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-/** API がタイムゾーン無しで返した場合は UTC として解釈する（SQLite 等の naive 対策） */
-function parseInstantMs(iso: string): number {
-  const trimmed = iso.trim();
-  const hasExplicitTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(trimmed);
-  return new Date(hasExplicitTz ? trimmed : `${trimmed}Z`).getTime();
-}
+import { parseInstantMs } from "@/lib/datetime";
 
 export function useTimer(startTime: string | null): number {
   const [now, setNow] = useState<number | null>(null);

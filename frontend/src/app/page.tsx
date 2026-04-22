@@ -5,6 +5,21 @@ import Link from "next/link";
 
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
 import { api, Category, Task, TaskStatus, TimeEntry } from "@/lib/api";
+import {
+  formatTokyoDate,
+  formatTokyoMonthLabel,
+  formatTokyoTime,
+  getTokyoCalendarDays,
+  getTokyoTodayDateString,
+  getTokyoMonthStartDate,
+  parseTokyoDateTimeLocal,
+  parseInstantMs,
+  startOfTokyoDayMs,
+  toTokyoDateInputValue,
+  toTokyoDateKey,
+  toTokyoDateTimeLocalValue,
+  toTokyoTimeInputValue
+} from "@/lib/datetime";
 
 type TaskFormState = {
   title: string;
@@ -38,107 +53,291 @@ const dueTimeOptions = Array.from({ length: 48 }, (_, index) => {
   return `${hours}:${minutes}`;
 });
 
+function splitDateTimeLocal(value: string): { date: string; time: string } {
+  if (!value) return { date: "", time: "" };
+  const [date = "", time = ""] = value.split("T");
+  return { date, time: time.slice(0, 5) };
+}
+
+function mergeDateTimeLocal(date: string, time: string): string {
+  if (!date) return "";
+  return `${date}T${time || "00:00"}`;
+}
+
+function addMonthsToMonthKey(monthKey: string, months: number): string {
+  if (!monthKey) return monthKey;
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  date.setUTCMonth(date.getUTCMonth() + months);
+  const nextYear = date.getUTCFullYear();
+  const nextMonth = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-01`;
+}
+
+function ActiveTimerPopoverField({
+  open,
+  onOpenChange,
+  value,
+  onChange,
+  durationLabel,
+  nowIso,
+  onSave,
+  disabled = false,
+  className = ""
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  value: string;
+  onChange: (next: string) => void;
+  durationLabel: string;
+  nowIso?: string;
+  onSave: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [monthKey, setMonthKey] = useState("");
+  const startSplit = splitDateTimeLocal(value);
+  const endSplit = splitDateTimeLocal(nowIso ?? value);
+  const selectedDateKey = startSplit.date || endSplit.date || "";
+  const visibleMonthKey = monthKey || `${(selectedDateKey || getTokyoTodayDateString()).slice(0, 7)}-01`;
+  const calendarDays = useMemo(
+    () =>
+      getTokyoCalendarDays(new Date(`${visibleMonthKey}T00:00:00Z`)).map((day) => {
+        const dateKey = toTokyoDateKey(day);
+        return {
+          dateKey,
+          inMonth: dateKey.startsWith(visibleMonthKey.slice(0, 7))
+        };
+      }),
+    [visibleMonthKey]
+  );
+  const currentMonthLabel = formatTokyoMonthLabel(new Date(`${visibleMonthKey}T00:00:00Z`));
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onOpenChange(false);
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onOpenChange, open]);
+
+  useEffect(() => {
+    if (!open || monthKey) return;
+    setMonthKey(`${(selectedDateKey || getTokyoTodayDateString()).slice(0, 7)}-01`);
+  }, [monthKey, open, selectedDateKey]);
+
+  function setDate(nextDateKey: string) {
+    const nextStart = mergeDateTimeLocal(nextDateKey, startSplit.time || "00:00");
+    onChange(nextStart);
+  }
+
+  return (
+    <div ref={rootRef} className={`relative ${className}`.trim()}>
+      <button
+        type="button"
+        disabled={disabled}
+        className="flex h-12 w-full items-center justify-between gap-4 rounded-[20px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-4 text-left text-sm text-[color:var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => onOpenChange(!open)}
+      >
+        <p className="text-[1.45rem] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
+          {durationLabel}
+        </p>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 18 18"
+          className={`h-3.5 w-3.5 shrink-0 text-[color:var(--muted)] transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+        >
+          <path
+            d="M5 7.5L10 12.5L15 7.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-[500px] max-w-[min(500px,calc(100vw-2rem))] rounded-[20px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-3.5 shadow-[var(--shadow)]">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                Start
+              </span>
+              <div className="flex items-center gap-2.5 rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2.5">
+                <input
+                  type="time"
+                  step="60"
+                  className="min-w-0 flex-1 bg-transparent text-xl font-semibold tracking-[-0.04em] text-[color:var(--text)] outline-none"
+                  value={startSplit.time}
+                  onChange={(event) => onChange(mergeDateTimeLocal(startSplit.date, event.target.value))}
+                />
+                <button
+                  type="button"
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-strong)]"
+                  onClick={() => {
+                    const current = splitDateTimeLocal(value);
+                    onChange(mergeDateTimeLocal(getTokyoTodayDateString(), current.time || "00:00"));
+                  }}
+                >
+                  Today
+                </button>
+              </div>
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                Stop
+              </span>
+              <div className="rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2.5 opacity-65">
+                <input
+                  type="time"
+                  step="60"
+                  disabled
+                  value={toTokyoTimeInputValue(nowIso || new Date().toISOString())}
+                  className="w-full bg-transparent text-xl font-semibold tracking-[-0.04em] text-[color:var(--text)] outline-none disabled:cursor-not-allowed disabled:text-[color:var(--muted)]"
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-6 border-t border-[color:var(--line)] pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-[20px] font-semibold tracking-[-0.04em] text-[color:var(--text)]">
+                {currentMonthLabel}
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-[14px] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 py-2 text-base font-semibold text-[color:var(--text)]"
+                  onClick={() => setMonthKey((current) => addMonthsToMonthKey(current || visibleMonthKey, -1))}
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="rounded-[14px] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 py-2 text-base font-semibold text-[color:var(--text)]"
+                  onClick={() => setMonthKey((current) => addMonthsToMonthKey(current || visibleMonthKey, 1))}
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-7 text-center text-[11px] font-semibold text-[color:var(--muted)]">
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+                <div key={label} className="pb-2">
+                  {label}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-y-1.5">
+              {calendarDays.map((day) => {
+                const isActive = day.dateKey === selectedDateKey;
+                const isToday = day.dateKey === getTokyoTodayDateString();
+                return (
+                  <button
+                    key={day.dateKey}
+                    type="button"
+                    className={[
+                      "mx-auto flex h-8 w-8 items-center justify-center rounded-[10px] text-sm font-semibold transition",
+                      isActive ? "bg-[color:var(--accent)] text-white" : "text-[color:var(--text)] hover:bg-white/6",
+                      !day.inMonth ? "opacity-35" : "",
+                      isToday && !isActive ? "ring-1 ring-[color:var(--accent)]" : ""
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => setDate(day.dateKey)}
+                  >
+                    {Number(day.dateKey.slice(-2))}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+              onClick={() => onOpenChange(false)}
+            >
+              閉じる
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+              onClick={() => {
+                onSave();
+                onOpenChange(false);
+              }}
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function formatDueAt(dueAt: string | null): string {
   if (!dueAt) return "期限なし";
-  const date = new Date(dueAt);
-  const dateLabel = date.toLocaleDateString("ja-JP", {
-    month: "numeric",
-    day: "numeric",
-    timeZone: "Asia/Tokyo"
-  });
-  const timeLabel = date.toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Tokyo"
-  });
+  const dateLabel = formatTokyoDate(dueAt);
+  const timeLabel = formatTokyoTime(dueAt);
   if (timeLabel === "00:00") return dateLabel;
   return `${dateLabel} ${timeLabel}`;
 }
 
-function formatMonthLabel(baseDate: Date): string {
-  return `${baseDate.getFullYear()}年${baseDate.getMonth() + 1}月`;
-}
-
-function formatStartTime(value: string): string {
-  return new Date(value).toLocaleString("ja-JP", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Tokyo"
-  });
-}
-
-function toDateTimeLocalValue(value: string): string {
-  const date = new Date(value);
-  const pad = (num: number) => String(num).padStart(2, "0");
-
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate())
-  ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function toLocalDateInputValue(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return toTokyoDateInputValue(value);
 }
 
 function toLocalTimeValue(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return toTokyoTimeInputValue(value);
 }
 
 function startOfDayMs(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return startOfTokyoDayMs(date);
 }
 
 function parseDueMs(value: string | null): number | null {
   if (!value) return null;
-  return new Date(value).getTime();
+  return parseInstantMs(value);
 }
 
 function hasExplicitDueTime(value: string | null): boolean {
-  if (!value) return false;
-  const date = new Date(value);
-  return date.getHours() !== 0 || date.getMinutes() !== 0;
+  return toLocalTimeValue(value) !== "00:00";
 }
 
 function combineDueDateTime(dateValue: string, timeValue: string): string | null {
   if (!dateValue) return null;
   const normalizedTime = timeValue || "00:00";
-  const iso = new Date(`${dateValue}T${normalizedTime}:00`).toISOString();
-  return iso;
+  return parseTokyoDateTimeLocal(`${dateValue}T${normalizedTime}`);
 }
 
 function isToday(value: string | null): boolean {
-  const due = parseDueMs(value);
-  if (due === null) return false;
-  const date = new Date(due);
-  const today = new Date();
-  return (
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate()
-  );
+  return value ? toTokyoDateKey(value) === getTokyoTodayDateString() : false;
 }
 
 function isSameLocalDate(value: string | null, baseDate: Date): boolean {
-  const due = parseDueMs(value);
-  if (due === null) return false;
-  const date = new Date(due);
-  return (
-    date.getFullYear() === baseDate.getFullYear() &&
-    date.getMonth() === baseDate.getMonth() &&
-    date.getDate() === baseDate.getDate()
-  );
+  return value ? toTokyoDateKey(value) === toTokyoDateKey(baseDate) : false;
 }
 
 function isOverdue(value: string | null): boolean {
@@ -180,18 +379,18 @@ function compareTasks(a: Task, b: Task, sort: TaskSort): number {
   }
 
   if (sort === "createdDesc") {
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    return parseInstantMs(b.created_at) - parseInstantMs(a.created_at);
   }
 
   if (sort === "createdAsc") {
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return parseInstantMs(a.created_at) - parseInstantMs(b.created_at);
   }
 
   const aDue = parseDueMs(a.due_at);
   const bDue = parseDueMs(b.due_at);
 
   if (aDue === null && bDue === null) {
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return parseInstantMs(a.created_at) - parseInstantMs(b.created_at);
   }
   if (aDue === null) return 1;
   if (bDue === null) return -1;
@@ -199,48 +398,12 @@ function compareTasks(a: Task, b: Task, sort: TaskSort): number {
   if (sort === "dueDesc") {
     const diff = bDue - aDue;
     if (diff !== 0) return diff;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    return parseInstantMs(b.created_at) - parseInstantMs(a.created_at);
   }
 
   const diff = aDue - bDue;
   if (diff !== 0) return diff;
-  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-}
-
-function getTodayDateString(offsetDays = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getCalendarDays(baseDate: Date): Date[] {
-  const firstDay = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
-  const start = new Date(firstDay);
-  start.setDate(start.getDate() - firstDay.getDay());
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const next = new Date(start);
-    next.setDate(start.getDate() + index);
-    return next;
-  });
-}
-
-function isSameDate(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-function toDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return parseInstantMs(a.created_at) - parseInstantMs(b.created_at);
 }
 
 function matchesDueFilter(task: Task, filter: DueFilter): boolean {
@@ -251,8 +414,7 @@ function matchesDueFilter(task: Task, filter: DueFilter): boolean {
   const today = startOfDayMs(todayDate);
   const due = parseDueMs(task.due_at);
   if (due === null) return false;
-  const dueDate = new Date(due);
-  const dueDay = startOfDayMs(dueDate);
+  const dueDay = startOfDayMs(new Date(due));
 
   if (filter === "today") {
     return isSameLocalDate(task.due_at, todayDate);
@@ -566,24 +728,30 @@ function TaskRow({
           isActive ? (
             <button
               type="button"
-              className="rounded-full bg-white/8 px-3 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--danger)] text-white hover:bg-[color:var(--danger)]"
               onClick={(event) => {
                 event.stopPropagation();
                 onStop();
               }}
+              aria-label="停止"
             >
-              停止
+              <svg viewBox="0 0 20 20" className="h-4.5 w-4.5" fill="currentColor" aria-hidden="true">
+                <rect x="6.4" y="6.4" width="7.2" height="7.2" rx="1.3" />
+              </svg>
             </button>
           ) : (
             <button
               type="button"
-              className="rounded-full bg-[color:var(--accent)] px-3 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--accent)] text-white hover:bg-[color:var(--accent-strong)]"
               onClick={(event) => {
                 event.stopPropagation();
                 onStart();
               }}
+              aria-label="開始"
             >
-              開始
+              <svg viewBox="0 0 20 20" className="h-4.5 w-4.5" fill="currentColor" aria-hidden="true">
+                <path d="M7.4 5.4v9.2l7.2-4.6-7.2-4.6Z" />
+              </svg>
             </button>
           )
         ) : null}
@@ -633,10 +801,7 @@ export default function HomePage() {
   const [duePickerPosition, setDuePickerPosition] = useState<DuePickerPosition | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [clientNowIso, setClientNowIso] = useState<string | null>(null);
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), 1);
-  });
+  const [calendarMonth, setCalendarMonth] = useState(() => getTokyoMonthStartDate(new Date()));
   const duePickerRef = useRef<HTMLDivElement | null>(null);
   const dueTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dueEditTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -700,7 +865,7 @@ export default function HomePage() {
     return groups;
   }, [tasks, categoryFilter, dueFilter, taskSort]);
 
-  const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
+  const calendarDays = useMemo(() => getTokyoCalendarDays(calendarMonth), [calendarMonth]);
 
   async function refreshTasks() {
     const data = await api.listTasks();
@@ -744,7 +909,7 @@ export default function HomePage() {
       return;
     }
 
-    setActiveStartTimeInput(toDateTimeLocalValue(activeEntry.start_time));
+    setActiveStartTimeInput(toTokyoDateTimeLocalValue(activeEntry.start_time));
   }, [activeEntry]);
 
   useEffect(() => {
@@ -934,7 +1099,7 @@ export default function HomePage() {
     try {
       const response = await api.updateTaskStartTime(
         activeTask.id,
-        new Date(activeStartTimeInput).toISOString()
+        parseTokyoDateTimeLocal(activeStartTimeInput)
       );
       setActiveEntry(response.active_entry);
       setEditingActiveStartTime(false);
@@ -1064,7 +1229,7 @@ export default function HomePage() {
     setEditingDueTimeValue(toLocalTimeValue(task.due_at));
     const due = parseDueMs(task.due_at);
     const baseDate = due === null ? new Date() : new Date(due);
-    setCalendarMonth(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1));
+    setCalendarMonth(getTokyoMonthStartDate(baseDate));
     const rect = anchor.getBoundingClientRect();
     const pickerWidth = 380;
     const margin = 12;
@@ -1133,7 +1298,7 @@ export default function HomePage() {
     }
   }
 
-  const selectedDue = currentDueDate ? new Date(`${currentDueDate}T00:00:00`) : null;
+  const selectedDue = currentDueDate;
   const pendingCount = filteredPendingTasks.length;
 
   return (
@@ -1321,7 +1486,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString())}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString())}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconSpark />
@@ -1331,7 +1496,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString(1))}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(1))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconIdea />
@@ -1341,7 +1506,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString(7))}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(7))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconCalendar />
@@ -1362,28 +1527,20 @@ export default function HomePage() {
 
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-[15px] font-medium tracking-[-0.02em] text-[color:var(--text)]">
-                  {formatMonthLabel(calendarMonth)}
+                    {formatTokyoMonthLabel(calendarMonth)}
                 </p>
                 <div className="flex items-center gap-1 text-[color:var(--muted)]">
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
-                    onClick={() =>
-                      setCalendarMonth(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
-                      )
-                    }
+                      onClick={() => setCalendarMonth((prev) => getTokyoMonthStartDate(new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))))}
                   >
                     <IconChevronLeft />
                   </button>
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
-                    onClick={() =>
-                      setCalendarMonth(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
-                      )
-                    }
+                      onClick={() => setCalendarMonth((prev) => getTokyoMonthStartDate(new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))))}
                   >
                     <IconChevronRight />
                   </button>
@@ -1398,9 +1555,10 @@ export default function HomePage() {
 
               <div className="mt-3 grid grid-cols-7 gap-y-1 text-center">
                 {calendarDays.map((day) => {
-                  const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
-                  const isSelected = selectedDue ? isSameDate(day, selectedDue) : false;
-                  const isCurrentDay = isSameDate(day, new Date());
+                  const dayKey = toTokyoDateKey(day);
+                  const isCurrentMonth = dayKey.slice(0, 7) === toTokyoDateKey(calendarMonth).slice(0, 7);
+                  const isSelected = selectedDue ? dayKey === selectedDue : false;
+                  const isCurrentDay = dayKey === getTokyoTodayDateString();
 
                   return (
                     <button
@@ -1415,7 +1573,7 @@ export default function HomePage() {
                               ? "text-[color:var(--text)] hover:bg-white/8"
                               : "text-[color:var(--muted)] hover:bg-white/6"
                       }`}
-                      onClick={() => setCurrentDueDate(toDateKey(day))}
+                      onClick={() => setCurrentDueDate(dayKey)}
                     >
                       {day.getDate()}
                     </button>
@@ -1663,12 +1821,23 @@ export default function HomePage() {
 
       <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
         <p className="text-sm text-[color:var(--muted)]">進行中</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">
-          {activeTask ? activeTask.title : "待機中"}
-        </h2>
-        <p className="mt-4 text-[40px] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
-          {formatSeconds(elapsedSeconds)}
-        </p>
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">
+            {activeTask ? activeTask.title : "待機中"}
+          </h2>
+          {activeEntry && activeTask ? (
+            <button
+              type="button"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--danger)] text-white hover:bg-[color:var(--danger)]"
+              onClick={() => void handleStop(activeTask.id)}
+              aria-label="停止"
+            >
+              <svg viewBox="0 0 20 20" className="h-4.5 w-4.5" fill="currentColor" aria-hidden="true">
+                <rect x="6.4" y="6.4" width="7.2" height="7.2" rx="1.3" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
         <div className="mt-4 h-2 rounded-full bg-white/8">
           <div
             className="h-full rounded-full bg-[linear-gradient(90deg,#4f7cff,#86a7ff)]"
@@ -1684,55 +1853,17 @@ export default function HomePage() {
           </span>
         </div>
         {activeEntry ? (
-          <div className="mt-5 space-y-3">
-            <p className="text-sm text-[color:var(--muted)]">開始 {formatStartTime(activeEntry.start_time)}</p>
-            {editingActiveStartTime ? (
-              <div className="space-y-2">
-                <input
-                  type="datetime-local"
-                  value={activeStartTimeInput}
-                  max={clientNowIso ? toDateTimeLocalValue(clientNowIso) : undefined}
-                  onChange={(event) => setActiveStartTimeInput(event.target.value)}
-                  className="w-full rounded-[18px] border border-[color:var(--line)] bg-white/5 px-4 py-3 text-sm text-[color:var(--text)] focus:outline-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white"
-                    onClick={() => void handleUpdateActiveStartTime()}
-                  >
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)]"
-                    onClick={() => setEditingActiveStartTime(false)}
-                  >
-                    キャンセル
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
-                  onClick={() => setEditingActiveStartTime(true)}
-                >
-                  開始時刻を修正
-                </button>
-                {activeTask ? (
-                  <button
-                    type="button"
-                    className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
-                    onClick={() => void handleStop(activeTask.id)}
-                  >
-                    停止
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </div>
+          <ActiveTimerPopoverField
+            open={editingActiveStartTime}
+            onOpenChange={setEditingActiveStartTime}
+            value={activeStartTimeInput}
+            onChange={setActiveStartTimeInput}
+            durationLabel={formatSeconds(elapsedSeconds)}
+            nowIso={clientNowIso || new Date().toISOString()}
+            onSave={() => void handleUpdateActiveStartTime()}
+            disabled={false}
+            className="mt-5"
+          />
         ) : (
           <p className="mt-5 text-sm leading-6 text-[color:var(--muted)]">
             タスクを開始すると、ここに実行中の情報が表示されます。
@@ -1856,7 +1987,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString())}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString())}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconSpark />
@@ -1866,7 +1997,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString(1))}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(1))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconIdea />
@@ -1876,7 +2007,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTodayDateString(7))}
+                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(7))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconCalendar />
@@ -1897,28 +2028,20 @@ export default function HomePage() {
 
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-[15px] font-medium tracking-[-0.02em] text-[color:var(--text)]">
-                  {formatMonthLabel(calendarMonth)}
+                  {formatTokyoMonthLabel(calendarMonth)}
                 </p>
                 <div className="flex items-center gap-1 text-[color:var(--muted)]">
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
-                    onClick={() =>
-                      setCalendarMonth(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
-                      )
-                    }
+                      onClick={() => setCalendarMonth((prev) => getTokyoMonthStartDate(new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))))}
                   >
                     <IconChevronLeft />
                   </button>
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/8"
-                    onClick={() =>
-                      setCalendarMonth(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
-                      )
-                    }
+                      onClick={() => setCalendarMonth((prev) => getTokyoMonthStartDate(new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))))}
                   >
                     <IconChevronRight />
                   </button>
@@ -1933,9 +2056,10 @@ export default function HomePage() {
 
               <div className="mt-3 grid grid-cols-7 gap-y-1 text-center">
                 {calendarDays.map((day) => {
-                  const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
-                  const isSelected = selectedDue ? isSameDate(day, selectedDue) : false;
-                  const isCurrentDay = isSameDate(day, new Date());
+                  const dayKey = toTokyoDateKey(day);
+                  const isCurrentMonth = dayKey.slice(0, 7) === toTokyoDateKey(calendarMonth).slice(0, 7);
+                  const isSelected = selectedDue ? dayKey === selectedDue : false;
+                  const isCurrentDay = dayKey === getTokyoTodayDateString();
 
                   return (
                     <button
@@ -1950,7 +2074,7 @@ export default function HomePage() {
                               ? "text-[color:var(--text)] hover:bg-white/8"
                               : "text-[color:var(--muted)] hover:bg-white/6"
                       }`}
-                      onClick={() => setCurrentDueDate(toDateKey(day))}
+                      onClick={() => setCurrentDueDate(dayKey)}
                     >
                       {day.getDate()}
                     </button>
