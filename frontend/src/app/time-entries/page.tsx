@@ -3,13 +3,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { CustomDropdown } from "@/components/custom-dropdown";
+import { useAppTime } from "@/components/app-time-provider";
 import { api, Task, TaskStatus, TimeEntryDetail } from "@/lib/api";
 import {
-  APP_TIME_ZONE,
   formatTokyoDateTime,
   formatTokyoTime,
   getTokyoTimeParts,
-  getTokyoTodayDateString,
   parseTokyoDateTimeLocal,
   parseInstantMs,
   toTokyoDateKey,
@@ -98,12 +97,10 @@ function formatLocalDateKey(value: Date): string {
 }
 
 function formatDayLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    month: "numeric",
-    day: "numeric",
-    weekday: "short"
-  }).format(new Date(`${dayKey}T00:00:00Z`));
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const weekdayLabels = ["日", "月", "火", "水", "木", "金", "土"];
+  const weekday = weekdayLabels[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${month}/${day}(${weekday})`;
 }
 
 function getDateKey(value: string): string {
@@ -128,19 +125,14 @@ function addDays(key: string, days: number): string {
 }
 
 function getWeekLabel(startKey: string): string {
-  const start = new Date(`${startKey}T00:00:00Z`);
-  const end = new Date(`${addDays(startKey, 6)}T00:00:00Z`);
-  const format = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    month: "numeric",
-    day: "numeric"
-  });
-  return `${format.format(start)} - ${format.format(end)}`;
+  const [, startMonth, startDay] = startKey.split("-").map(Number);
+  const [, endMonth, endDay] = addDays(startKey, 6).split("-").map(Number);
+  return `${startMonth}/${startDay} - ${endMonth}/${endDay}`;
 }
 
-function getDurationSeconds(start: string, end: string | null): number {
+function getDurationSeconds(start: string, end: string | null, nowIso?: string): number {
   if (!start) return 0;
-  const endTime = end ?? new Date().toISOString();
+  const endTime = end ?? nowIso ?? start;
   const startMs = parseInstantMs(start);
   const endMs = parseInstantMs(endTime);
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return 0;
@@ -201,11 +193,11 @@ function startOfVisibleMinutes(value: string): number {
   return hour * 60 + minute;
 }
 
-function clampCalendarPosition(entry: TimeEntryDetail): { top: number; height: number } {
+function clampCalendarPosition(entry: TimeEntryDetail, nowIso?: string): { top: number; height: number } {
   const visibleStart = 0;
   const visibleEnd = 24 * 60;
   const start = Math.max(visibleStart, startOfVisibleMinutes(entry.start_time));
-  const end = Math.min(visibleEnd, startOfVisibleMinutes(entry.end_time ?? new Date().toISOString()));
+  const end = Math.min(visibleEnd, startOfVisibleMinutes(entry.end_time ?? nowIso ?? entry.start_time));
   const height = Math.max(30, end - start);
   return {
     top: ((start - visibleStart) / 60) * 64,
@@ -347,6 +339,7 @@ function TimerPopoverField({
   durationLabel,
   runningEntryStartValue,
   nowIso,
+  todayKey,
   className = ""
 }: {
   startValue: string;
@@ -356,6 +349,7 @@ function TimerPopoverField({
   durationLabel: string;
   runningEntryStartValue?: string | null;
   nowIso?: string;
+  todayKey: string;
   className?: string;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -366,12 +360,9 @@ function TimerPopoverField({
   const startSplit = splitTokyoDateTimeLocal(isRunning ? runningEntryStartValue ?? startValue : startValue);
   const endSplit = splitTokyoDateTimeLocal(isRunning ? nowIso ?? endValue : endValue);
   const selectedDateKey = startSplit.date || endSplit.date || "";
-  const visibleMonthKey = monthKey || getMonthStartKey(selectedDateKey || getTokyoTodayDateString());
+  const visibleMonthKey = monthKey || getMonthStartKey(selectedDateKey || todayKey);
   const calendarDays = useMemo(() => buildMonthGrid(visibleMonthKey), [visibleMonthKey]);
-  const currentMonthLabel = new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "long"
-  }).format(new Date(`${visibleMonthKey}T00:00:00Z`));
+  const currentMonthLabel = visibleMonthKey ? `${visibleMonthKey.slice(0, 4)}年${Number(visibleMonthKey.slice(5, 7))}月` : "";
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
@@ -394,8 +385,8 @@ function TimerPopoverField({
 
   useEffect(() => {
     if (!open || monthKey) return;
-    setMonthKey(getMonthStartKey(selectedDateKey || getTokyoTodayDateString()));
-  }, [monthKey, open, selectedDateKey]);
+    setMonthKey(getMonthStartKey(selectedDateKey || todayKey));
+  }, [monthKey, open, selectedDateKey, todayKey]);
 
   useEffect(() => {
     if (!open || isRunning) return;
@@ -458,7 +449,7 @@ function TimerPopoverField({
                   type="button"
                   className="rounded-full px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-strong)]"
                   onClick={() => {
-                    const today = getTokyoTodayDateString();
+                    const today = todayKey;
                     setDate(today);
                   }}
                 >
@@ -526,7 +517,7 @@ function TimerPopoverField({
             <div className="grid grid-cols-7 gap-y-1.5">
               {calendarDays.map((day) => {
                 const isActive = day.dateKey === selectedDateKey;
-                const isToday = day.dateKey === getTokyoTodayDateString();
+                const isToday = day.dateKey === todayKey;
                 return (
                   <button
                     key={day.dateKey}
@@ -554,6 +545,7 @@ function TimerPopoverField({
 }
 
 export default function TimeEntriesPage() {
+  const { todayKey } = useAppTime();
   const [entries, setEntries] = useState<TimeEntryDetail[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
@@ -610,10 +602,10 @@ export default function TimeEntriesPage() {
     if (entries.length > 0) {
       setWeekStart(getStartOfWeekKey(entries[0].start_time));
     } else {
-      setWeekStart(getStartOfWeekKey(getTokyoTodayDateString()));
+      setWeekStart(getStartOfWeekKey(todayKey));
     }
     setWeekInitialized(true);
-  }, [entries, weekInitialized]);
+  }, [entries, weekInitialized, todayKey]);
 
   useEffect(() => {
     if (!isMounted || manualInitialized || !clientNowIso) return;
@@ -652,21 +644,21 @@ export default function TimeEntriesPage() {
         totalSeconds: 0
       };
       current.count += 1;
-      current.totalSeconds += getDurationSeconds(entry.start_time, entry.end_time);
+      current.totalSeconds += getDurationSeconds(entry.start_time, entry.end_time, clientNowIso || undefined);
       map.set(entry.task_category, current);
     }
     return Array.from(map.values()).sort((a, b) => b.totalSeconds - a.totalSeconds);
-  }, [weekEntries]);
+  }, [weekEntries, clientNowIso]);
 
   const dayTotals = useMemo(() => {
     const totals = new Map<string, number>();
     for (const day of weekDays) totals.set(day, 0);
     for (const entry of weekEntries) {
       const key = getDateKey(entry.start_time);
-      totals.set(key, (totals.get(key) ?? 0) + getDurationSeconds(entry.start_time, entry.end_time));
+      totals.set(key, (totals.get(key) ?? 0) + getDurationSeconds(entry.start_time, entry.end_time, clientNowIso || undefined));
     }
     return totals;
-  }, [weekEntries, weekDays]);
+  }, [weekEntries, weekDays, clientNowIso]);
 
   const timesheetRows = useMemo(() => {
     const rows = new Map<string, Map<string, number>>();
@@ -674,7 +666,7 @@ export default function TimeEntriesPage() {
       const dayKey = getDateKey(entry.start_time);
       const category = entry.task_category;
       const dayMap = rows.get(category) ?? new Map<string, number>();
-      dayMap.set(dayKey, (dayMap.get(dayKey) ?? 0) + getDurationSeconds(entry.start_time, entry.end_time));
+      dayMap.set(dayKey, (dayMap.get(dayKey) ?? 0) + getDurationSeconds(entry.start_time, entry.end_time, clientNowIso || undefined));
       rows.set(category, dayMap);
     }
 
@@ -686,11 +678,11 @@ export default function TimeEntriesPage() {
         days: weekDays.map((dayKey) => ({ dayKey, totalSeconds: dayMap.get(dayKey) ?? 0 }))
       }))
       .sort((a, b) => b.totalSeconds - a.totalSeconds);
-  }, [weekEntries, weekDays]);
+  }, [weekEntries, weekDays, clientNowIso]);
 
   const totalSeconds = useMemo(
-    () => weekEntries.reduce((sum, entry) => sum + getDurationSeconds(entry.start_time, entry.end_time), 0),
-    [weekEntries]
+    () => weekEntries.reduce((sum, entry) => sum + getDurationSeconds(entry.start_time, entry.end_time, clientNowIso || undefined), 0),
+    [weekEntries, clientNowIso]
   );
 
   const activeRunningEntry = useMemo(
@@ -698,19 +690,20 @@ export default function TimeEntriesPage() {
     [activeTaskId, entries]
   );
 
-  const activeTimerSeconds = activeRunningEntry
-    ? getRunningSeconds(activeRunningEntry.start_time, clientNowIso || new Date().toISOString())
-    : 0;
+  const activeTimerSeconds =
+    activeRunningEntry && clientNowIso
+      ? getRunningSeconds(activeRunningEntry.start_time, clientNowIso)
+      : 0;
   const isQuickTaskRunning = Boolean(activeRunningEntry);
 
-  const todayKey = clientNowIso ? getDateKey(clientNowIso) : "";
+  const currentTodayKey = clientNowIso ? getDateKey(clientNowIso) : "";
   const currentMinuteOffset = clientNowIso ? getCurrentMinuteOffset(clientNowIso) : 0;
   const todaySeconds = useMemo(
     () =>
       weekEntries
-        .filter((entry) => getDateKey(entry.start_time) === todayKey)
-        .reduce((sum, entry) => sum + getDurationSeconds(entry.start_time, entry.end_time), 0),
-    [weekEntries, todayKey]
+        .filter((entry) => getDateKey(entry.start_time) === currentTodayKey)
+        .reduce((sum, entry) => sum + getDurationSeconds(entry.start_time, entry.end_time, clientNowIso || undefined), 0),
+    [weekEntries, currentTodayKey, clientNowIso]
   );
 
   const selectedWeekLabel = weekStart ? getWeekLabel(weekStart) : "";
@@ -747,7 +740,7 @@ export default function TimeEntriesPage() {
         start_time: parseTokyoDateTimeLocal(manualStart),
         end_time: parseTokyoDateTimeLocal(manualEnd)
       });
-      const end = new Date(clientNowIso || new Date().toISOString());
+      const end = clientNowIso ? new Date(clientNowIso) : new Date();
       const start = new Date(end.getTime() - 60 * 60 * 1000);
       setManualStart(toTokyoDateTimeLocalValue(start.toISOString()));
       setManualEnd(toTokyoDateTimeLocalValue(end.toISOString()));
@@ -863,7 +856,8 @@ export default function TimeEntriesPage() {
               onEndChange={setManualEnd}
               durationLabel={activeRunningEntry ? formatClock(activeTimerSeconds) : formatClock(getDurationSeconds(manualStart, manualEnd))}
               runningEntryStartValue={activeRunningEntry?.start_time ?? null}
-              nowIso={clientNowIso || new Date().toISOString()}
+              nowIso={clientNowIso || undefined}
+              todayKey={todayKey}
             />
 
               <button
@@ -1035,7 +1029,7 @@ export default function TimeEntriesPage() {
                                 isToday ? "text-[color:var(--accent-strong)]" : "text-[color:var(--text)]"
                               ].join(" ")}
                             >
-                              {new Date(`${dayKey}T00:00:00Z`).getUTCDate()}
+                              {Number(dayKey.slice(-2))}
                             </p>
                           </div>
                           <p className={isToday ? "text-xs font-semibold text-[color:var(--accent-strong)]" : "text-xs text-[color:var(--muted)]"}>
@@ -1093,7 +1087,7 @@ export default function TimeEntriesPage() {
                         ))}
                         {(groupedEntries[dayKey] ?? []).map((entry) => {
                           const color = getCategoryColor(entry.task_category);
-                          const position = clampCalendarPosition(entry);
+                          const position = clampCalendarPosition(entry, clientNowIso || undefined);
                           const isDimmed = selectedCategory !== null && selectedCategory !== entry.task_category;
                           const isRunning = entry.end_time === null;
                           return (

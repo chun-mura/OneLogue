@@ -10,24 +10,16 @@ type ZonedParts = {
 };
 
 function getZonedParts(value: string | Date): ZonedParts {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(value instanceof Date ? value : new Date(value));
+  const instantMs = value instanceof Date ? value.getTime() : parseInstantMs(value);
+  const partsDate = new Date(instantMs + 9 * 60 * 60 * 1000);
 
   return {
-    year: parts.find((part) => part.type === "year")?.value ?? "1970",
-    month: parts.find((part) => part.type === "month")?.value ?? "01",
-    day: parts.find((part) => part.type === "day")?.value ?? "01",
-    hour: parts.find((part) => part.type === "hour")?.value ?? "00",
-    minute: parts.find((part) => part.type === "minute")?.value ?? "00",
-    second: parts.find((part) => part.type === "second")?.value ?? "00"
+    year: String(partsDate.getUTCFullYear()).padStart(4, "0"),
+    month: String(partsDate.getUTCMonth() + 1).padStart(2, "0"),
+    day: String(partsDate.getUTCDate()).padStart(2, "0"),
+    hour: String(partsDate.getUTCHours()).padStart(2, "0"),
+    minute: String(partsDate.getUTCMinutes()).padStart(2, "0"),
+    second: String(partsDate.getUTCSeconds()).padStart(2, "0")
   };
 }
 
@@ -69,46 +61,32 @@ export function getTokyoTimeParts(value: string | Date): { hour: number; minute:
 
 export function formatTokyoDateTime(value: string | null): string {
   if (!value) return "進行中";
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(value));
+  const dateKey = toTokyoDateKey(value);
+  const { hour, minute } = getTokyoTimeParts(value);
+  return `${dateKey.replaceAll("-", "/")} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 export function formatTokyoTime(value: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(value));
+  const { hour, minute } = getTokyoTimeParts(value);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 export function formatTokyoDate(value: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date(value));
+  return toTokyoDateKey(value).replaceAll("-", "/");
 }
 
 export function formatTokyoMonthLabel(value: Date): string {
   const [year, month] = toTokyoDateKey(value).split("-").map(Number);
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "long"
-  }).format(new Date(Date.UTC(year, month - 1, 1)));
+  return `${year}年${month}月`;
 }
 
 export function parseInstantMs(iso: string): number {
   const trimmed = iso.trim();
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.exec(trimmed);
+  if (dateOnly) {
+    const [year, month, day] = dateOnly[0].split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  }
   const hasExplicitTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(trimmed);
   return new Date(hasExplicitTz ? trimmed : `${trimmed}Z`).getTime();
 }
@@ -120,7 +98,7 @@ export function startOfTokyoDayMs(date: Date): number {
 
 export function isTokyoSameDate(value: string | null, baseDate: Date): boolean {
   if (!value) return false;
-  return toTokyoDateKey(new Date(value)) === toTokyoDateKey(baseDate);
+  return toTokyoDateKey(value) === toTokyoDateKey(baseDate);
 }
 
 export function getTokyoTodayDateString(offsetDays = 0): string {
@@ -129,6 +107,14 @@ export function getTokyoTodayDateString(offsetDays = 0): string {
   const base = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
   base.setUTCDate(base.getUTCDate() + offsetDays);
   return toTokyoDateKey(base);
+}
+
+export function addTokyoDays(dateKey: string, offsetDays: number): string {
+  if (!dateKey) return dateKey;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return toTokyoDateKey(date);
 }
 
 export function getTokyoMonthStartDate(baseDate: Date): Date {

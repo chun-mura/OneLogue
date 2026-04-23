@@ -6,11 +6,11 @@ import Link from "next/link";
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
 import { api, Category, Task, TaskStatus, TimeEntry } from "@/lib/api";
 import {
+  addTokyoDays,
   formatTokyoDate,
   formatTokyoMonthLabel,
   formatTokyoTime,
   getTokyoCalendarDays,
-  getTokyoTodayDateString,
   getTokyoMonthStartDate,
   parseTokyoDateTimeLocal,
   parseInstantMs,
@@ -20,6 +20,7 @@ import {
   toTokyoDateTimeLocalValue,
   toTokyoTimeInputValue
 } from "@/lib/datetime";
+import { useAppTime } from "@/components/app-time-provider";
 
 type TaskFormState = {
   title: string;
@@ -81,6 +82,7 @@ function ActiveTimerPopoverField({
   onChange,
   durationLabel,
   nowIso,
+  todayKey,
   onSave,
   disabled = false,
   className = ""
@@ -91,6 +93,7 @@ function ActiveTimerPopoverField({
   onChange: (next: string) => void;
   durationLabel: string;
   nowIso?: string;
+  todayKey: string;
   onSave: () => void;
   disabled?: boolean;
   className?: string;
@@ -100,7 +103,7 @@ function ActiveTimerPopoverField({
   const startSplit = splitDateTimeLocal(value);
   const endSplit = splitDateTimeLocal(nowIso ?? value);
   const selectedDateKey = startSplit.date || endSplit.date || "";
-  const visibleMonthKey = monthKey || `${(selectedDateKey || getTokyoTodayDateString()).slice(0, 7)}-01`;
+  const visibleMonthKey = monthKey || `${(selectedDateKey || todayKey).slice(0, 7)}-01`;
   const calendarDays = useMemo(
     () =>
       getTokyoCalendarDays(new Date(`${visibleMonthKey}T00:00:00Z`)).map((day) => {
@@ -137,8 +140,8 @@ function ActiveTimerPopoverField({
 
   useEffect(() => {
     if (!open || monthKey) return;
-    setMonthKey(`${(selectedDateKey || getTokyoTodayDateString()).slice(0, 7)}-01`);
-  }, [monthKey, open, selectedDateKey]);
+    setMonthKey(`${(selectedDateKey || todayKey).slice(0, 7)}-01`);
+  }, [monthKey, open, selectedDateKey, todayKey]);
 
   function setDate(nextDateKey: string) {
     const nextStart = mergeDateTimeLocal(nextDateKey, startSplit.time || "00:00");
@@ -192,7 +195,7 @@ function ActiveTimerPopoverField({
                   className="rounded-full px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-strong)]"
                   onClick={() => {
                     const current = splitDateTimeLocal(value);
-                    onChange(mergeDateTimeLocal(getTokyoTodayDateString(), current.time || "00:00"));
+                    onChange(mergeDateTimeLocal(todayKey, current.time || "00:00"));
                   }}
                 >
                   Today
@@ -209,7 +212,7 @@ function ActiveTimerPopoverField({
                   type="time"
                   step="60"
                   disabled
-                  value={toTokyoTimeInputValue(nowIso || new Date().toISOString())}
+                  value={nowIso ? toTokyoTimeInputValue(nowIso) : ""}
                   className="w-full bg-transparent text-xl font-semibold tracking-[-0.04em] text-[color:var(--text)] outline-none disabled:cursor-not-allowed disabled:text-[color:var(--muted)]"
                 />
               </div>
@@ -250,7 +253,7 @@ function ActiveTimerPopoverField({
             <div className="grid grid-cols-7 gap-y-1.5">
               {calendarDays.map((day) => {
                 const isActive = day.dateKey === selectedDateKey;
-                const isToday = day.dateKey === getTokyoTodayDateString();
+                const isToday = day.dateKey === todayKey;
                 return (
                   <button
                     key={day.dateKey}
@@ -332,21 +335,17 @@ function combineDueDateTime(dateValue: string, timeValue: string): string | null
   return parseTokyoDateTimeLocal(`${dateValue}T${normalizedTime}`);
 }
 
-function isToday(value: string | null): boolean {
-  return value ? toTokyoDateKey(value) === getTokyoTodayDateString() : false;
+function isTodayKey(value: string | null, todayKey: string): boolean {
+  return value ? toTokyoDateKey(value) === todayKey : false;
 }
 
-function isSameLocalDate(value: string | null, baseDate: Date): boolean {
-  return value ? toTokyoDateKey(value) === toTokyoDateKey(baseDate) : false;
-}
-
-function isOverdue(value: string | null): boolean {
+function isOverdue(value: string | null, todayKey: string, nowIso: string): boolean {
   const due = parseDueMs(value);
   if (due === null) return false;
   if (hasExplicitDueTime(value)) {
-    return due < Date.now();
+    return due < parseInstantMs(nowIso);
   }
-  return due < startOfDayMs(new Date());
+  return toTokyoDateKey(new Date(due)) < todayKey;
 }
 
 function statusLabel(status: TaskStatus): string {
@@ -362,12 +361,12 @@ function statusLabel(status: TaskStatus): string {
   }
 }
 
-function dueChipTone(task: Task): string {
+function dueChipTone(task: Task, todayKey: string, nowIso: string): string {
   if (!task.due_at) return "bg-white/6 text-[color:var(--muted)]";
-  if (isOverdue(task.due_at) && task.status === "pending") {
+  if (isOverdue(task.due_at, todayKey, nowIso) && task.status === "pending") {
     return "bg-[color:var(--danger-soft)] text-[color:var(--danger)]";
   }
-  if (isToday(task.due_at)) {
+  if (isTodayKey(task.due_at, todayKey)) {
     return "bg-[color:var(--warning-soft)] text-[color:var(--warning)]";
   }
   return "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]";
@@ -406,21 +405,20 @@ function compareTasks(a: Task, b: Task, sort: TaskSort): number {
   return parseInstantMs(a.created_at) - parseInstantMs(b.created_at);
 }
 
-function matchesDueFilter(task: Task, filter: DueFilter): boolean {
+function matchesDueFilter(task: Task, filter: DueFilter, todayKey: string): boolean {
   if (filter === "all") return true;
   if (!task.due_at) return false;
 
-  const todayDate = new Date();
-  const today = startOfDayMs(todayDate);
   const due = parseDueMs(task.due_at);
   if (due === null) return false;
   const dueDay = startOfDayMs(new Date(due));
+  const today = startOfDayMs(new Date(`${todayKey}T00:00:00Z`));
 
   if (filter === "today") {
-    return isSameLocalDate(task.due_at, todayDate);
+    return isTodayKey(task.due_at, todayKey);
   }
 
-  return dueDay >= today && dueDay <= today + 6 * 24 * 60 * 60 * 1000;
+  return dueDay >= today && dueDay <= startOfDayMs(new Date(`${addTokyoDays(todayKey, 6)}T00:00:00Z`));
 }
 
 function IconPlus() {
@@ -567,6 +565,8 @@ function TaskRow({
   categoryOptions,
   categoryMenuRef,
   categoryTriggerRef,
+  todayKey,
+  nowIso,
   onEditCategoryStart,
   onEditCategoryChange,
   onEditCategoryCommit,
@@ -591,6 +591,8 @@ function TaskRow({
   categoryOptions: string[];
   categoryMenuRef: RefObject<HTMLDivElement | null>;
   categoryTriggerRef: RefObject<HTMLButtonElement | null>;
+  todayKey: string;
+  nowIso: string;
   onEditCategoryStart: () => void;
   onEditCategoryChange: (value: string) => void;
   onEditCategoryCommit: (value?: string) => void;
@@ -671,7 +673,7 @@ function TaskRow({
           <button
             type="button"
             onClick={(event) => onEditDueStart(event.currentTarget)}
-            className={`rounded-full px-2.5 py-1 font-semibold ${dueChipTone(task)} ${
+            className={`rounded-full px-2.5 py-1 font-semibold ${dueChipTone(task, todayKey, nowIso)} ${
               isEditingDue ? "ring-1 ring-[color:var(--accent-strong)]" : ""
             }`}
           >
@@ -773,6 +775,8 @@ function TaskRow({
 }
 
 export default function HomePage() {
+  const { todayKey, nowIso } = useAppTime();
+  const [isMounted, setIsMounted] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
@@ -800,8 +804,9 @@ export default function HomePage() {
   const [duePickerMode, setDuePickerMode] = useState<DuePickerMode>("create");
   const [duePickerPosition, setDuePickerPosition] = useState<DuePickerPosition | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
-  const [clientNowIso, setClientNowIso] = useState<string | null>(null);
-  const [calendarMonth, setCalendarMonth] = useState(() => getTokyoMonthStartDate(new Date()));
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => getTokyoMonthStartDate(new Date(`${todayKey}T00:00:00Z`))
+  );
   const duePickerRef = useRef<HTMLDivElement | null>(null);
   const dueTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dueEditTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -814,6 +819,10 @@ export default function HomePage() {
   const taskSortMenuRef = useRef<HTMLDivElement | null>(null);
   const taskSortTriggerRef = useRef<HTMLButtonElement | null>(null);
 
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const elapsedSeconds = useTimer(activeEntry?.start_time ?? null);
   const activeTask = useMemo(
     () => tasks.find((task) => task.id === activeEntry?.task_id) ?? null,
@@ -824,8 +833,8 @@ export default function HomePage() {
     return tasks
       .filter((task) => task.status === "pending")
       .filter((task) => (categoryFilter === "all" ? true : task.category === categoryFilter))
-      .filter((task) => matchesDueFilter(task, dueFilter));
-  }, [tasks, categoryFilter, dueFilter]);
+      .filter((task) => matchesDueFilter(task, dueFilter, todayKey));
+  }, [tasks, categoryFilter, dueFilter, todayKey]);
 
   const groupedTasks = useMemo(() => {
     const groups: Record<SectionKey, Task[]> = {
@@ -845,13 +854,13 @@ export default function HomePage() {
         continue;
       }
 
-      if (!matchesDueFilter(task, dueFilter)) {
+      if (!matchesDueFilter(task, dueFilter, todayKey)) {
         continue;
       }
 
-      if (isOverdue(task.due_at)) {
+      if (isOverdue(task.due_at, todayKey, nowIso)) {
         groups.overdue.push(task);
-      } else if (isToday(task.due_at)) {
+      } else if (isTodayKey(task.due_at, todayKey)) {
         groups.today.push(task);
       } else {
         groups.upcoming.push(task);
@@ -863,7 +872,7 @@ export default function HomePage() {
     groups.upcoming.sort((a, b) => compareTasks(a, b, taskSort));
     groups.completed.sort((a, b) => compareTasks(a, b, taskSort));
     return groups;
-  }, [tasks, categoryFilter, dueFilter, taskSort]);
+  }, [tasks, categoryFilter, dueFilter, taskSort, todayKey, nowIso]);
 
   const calendarDays = useMemo(() => getTokyoCalendarDays(calendarMonth), [calendarMonth]);
 
@@ -896,10 +905,6 @@ export default function HomePage() {
         setError(err instanceof Error ? err.message : "初期データの取得に失敗しました");
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    setClientNowIso(new Date().toISOString());
   }, []);
 
   useEffect(() => {
@@ -1228,7 +1233,7 @@ export default function HomePage() {
     setEditingDueValue(toLocalDateInputValue(task.due_at));
     setEditingDueTimeValue(toLocalTimeValue(task.due_at));
     const due = parseDueMs(task.due_at);
-    const baseDate = due === null ? new Date() : new Date(due);
+    const baseDate = due === null ? new Date(`${todayKey}T00:00:00Z`) : new Date(due);
     setCalendarMonth(getTokyoMonthStartDate(baseDate));
     const rect = anchor.getBoundingClientRect();
     const pickerWidth = 380;
@@ -1300,6 +1305,25 @@ export default function HomePage() {
 
   const selectedDue = currentDueDate;
   const pendingCount = filteredPendingTasks.length;
+
+  if (!isMounted) {
+    return (
+      <div className="space-y-5 pb-8">
+        <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6">
+          <div className="h-8 w-32 rounded-full bg-white/6" />
+          <div className="mt-4 h-20 rounded-[24px] bg-white/4" />
+        </section>
+        <section className="rounded-[34px] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[var(--shadow)]">
+          <div className="h-6 w-24 rounded-full bg-white/6" />
+          <div className="mt-4 space-y-3">
+            <div className="h-12 rounded-[18px] bg-white/4" />
+            <div className="h-12 rounded-[18px] bg-white/4" />
+            <div className="h-12 rounded-[18px] bg-white/4" />
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 pb-8">
@@ -1486,7 +1510,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString())}
+                  onClick={() => setCurrentDueDate(todayKey)}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconSpark />
@@ -1496,7 +1520,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(1))}
+                  onClick={() => setCurrentDueDate(addTokyoDays(todayKey, 1))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconIdea />
@@ -1506,7 +1530,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(7))}
+                  onClick={() => setCurrentDueDate(addTokyoDays(todayKey, 7))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconCalendar />
@@ -1558,7 +1582,7 @@ export default function HomePage() {
                   const dayKey = toTokyoDateKey(day);
                   const isCurrentMonth = dayKey.slice(0, 7) === toTokyoDateKey(calendarMonth).slice(0, 7);
                   const isSelected = selectedDue ? dayKey === selectedDue : false;
-                  const isCurrentDay = dayKey === getTokyoTodayDateString();
+                  const isCurrentDay = dayKey === todayKey;
 
                   return (
                     <button
@@ -1859,7 +1883,8 @@ export default function HomePage() {
             value={activeStartTimeInput}
             onChange={setActiveStartTimeInput}
             durationLabel={formatSeconds(elapsedSeconds)}
-            nowIso={clientNowIso || new Date().toISOString()}
+            nowIso={nowIso}
+            todayKey={todayKey}
             onSave={() => void handleUpdateActiveStartTime()}
             disabled={false}
             className="mt-5"
@@ -1987,7 +2012,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString())}
+                  onClick={() => setCurrentDueDate(todayKey)}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconSpark />
@@ -1997,7 +2022,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(1))}
+                  onClick={() => setCurrentDueDate(addTokyoDays(todayKey, 1))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconIdea />
@@ -2007,7 +2032,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="flex flex-col items-center gap-2 rounded-[14px] px-2 py-2.5 text-sm hover:bg-white/6"
-                  onClick={() => setCurrentDueDate(getTokyoTodayDateString(7))}
+                  onClick={() => setCurrentDueDate(addTokyoDays(todayKey, 7))}
                 >
                   <span className="text-[color:var(--muted)]">
                     <IconCalendar />
@@ -2059,7 +2084,7 @@ export default function HomePage() {
                   const dayKey = toTokyoDateKey(day);
                   const isCurrentMonth = dayKey.slice(0, 7) === toTokyoDateKey(calendarMonth).slice(0, 7);
                   const isSelected = selectedDue ? dayKey === selectedDue : false;
-                  const isCurrentDay = dayKey === getTokyoTodayDateString();
+                  const isCurrentDay = dayKey === todayKey;
 
                   return (
                     <button
@@ -2353,6 +2378,8 @@ export default function HomePage() {
                       categoryOptions={categories.map((category) => category.name)}
                       categoryMenuRef={categoryMenuRef}
                       categoryTriggerRef={categoryTriggerRef}
+                      todayKey={todayKey}
+                      nowIso={nowIso}
                       onEditCategoryStart={() => {
                         setEditingCategoryTaskId(task.id);
                         setEditingCategoryValue(task.category);
@@ -2400,6 +2427,8 @@ export default function HomePage() {
                       categoryOptions={categories.map((category) => category.name)}
                       categoryMenuRef={categoryMenuRef}
                       categoryTriggerRef={categoryTriggerRef}
+                      todayKey={todayKey}
+                      nowIso={nowIso}
                       onEditCategoryStart={() => {
                         setEditingCategoryTaskId(task.id);
                         setEditingCategoryValue(task.category);
@@ -2447,6 +2476,8 @@ export default function HomePage() {
                       categoryOptions={categories.map((category) => category.name)}
                       categoryMenuRef={categoryMenuRef}
                       categoryTriggerRef={categoryTriggerRef}
+                      todayKey={todayKey}
+                      nowIso={nowIso}
                       onEditCategoryStart={() => {
                         setEditingCategoryTaskId(task.id);
                         setEditingCategoryValue(task.category);
@@ -2494,6 +2525,8 @@ export default function HomePage() {
                       categoryOptions={categories.map((category) => category.name)}
                       categoryMenuRef={categoryMenuRef}
                       categoryTriggerRef={categoryTriggerRef}
+                      todayKey={todayKey}
+                      nowIso={nowIso}
                       onEditCategoryStart={() => {
                         setEditingCategoryTaskId(task.id);
                         setEditingCategoryValue(task.category);
