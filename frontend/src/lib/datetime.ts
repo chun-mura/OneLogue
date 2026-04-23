@@ -124,7 +124,7 @@ export function getTokyoMonthStartDate(baseDate: Date): Date {
 
 export function getTokyoCalendarDays(baseDate: Date): Date[] {
   const firstDay = getTokyoMonthStartDate(baseDate);
-  const startOffset = (firstDay.getUTCDay() + 6) % 7;
+  const startOffset = firstDay.getUTCDay();
   const start = new Date(firstDay);
   start.setUTCDate(start.getUTCDate() - startOffset);
 
@@ -133,4 +133,15 @@ export function getTokyoCalendarDays(baseDate: Date): Date[] {
     next.setUTCDate(start.getUTCDate() + index);
     return next;
   });
+}
+
+export function splitDateTimeLocal(value: string): { date: string; time: string } {
+  if (!value) return { date: "", time: "" };
+  const [date = "", time = ""] = value.split("T");
+  return { date, time: time.slice(0, 5) };
+}
+
+export function mergeDateTimeLocal(date: string, time: string): string {
+  if (!date) return "";
+  return `${date}T${time || "00:00"}`;
 }

@@ -4,16 +4,28 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { CustomDropdown } from "@/components/custom-dropdown";
 import { useAppTime } from "@/components/app-time-provider";
-import { api, Task, TaskStatus, TimeEntryDetail } from "@/lib/api";
+import {
+  addDays,
+  addMonths,
+  buildMonthGrid,
+  getMonthStartKey,
+  getStartOfWeekKey,
+  getWeekLabel
+} from "@/features/time-entries/domain";
+import { useDismissableLayer } from "@/hooks/useDismissableLayer";
+import { api, Task, TimeEntryDetail } from "@/lib/api";
 import {
   formatTokyoDateTime,
   formatTokyoTime,
   getTokyoTimeParts,
+  mergeDateTimeLocal,
   parseTokyoDateTimeLocal,
   parseInstantMs,
+  splitDateTimeLocal,
   toTokyoDateKey,
   toTokyoDateTimeLocalValue
 } from "@/lib/datetime";
+import { toTaskStatusLabel } from "@/lib/task-status";
 
 type ViewMode = "calendar" | "list" | "timesheet";
 
@@ -34,61 +46,10 @@ type CategorySummary = {
 
 const CATEGORY_COLORS = ["#93c5fd", "#a3e635", "#fbbf24", "#fb7185", "#c4b5fd", "#5eead4", "#fdba74"];
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function splitDateTimeLocal(value: string): { date: string; time: string } {
-  if (!value) return { date: "", time: "" };
-  const [date = "", time = ""] = value.split("T");
-  return { date, time: time.slice(0, 5) };
-}
-
-function mergeDateTimeLocal(date: string, time: string): string {
-  if (!date) return "";
-  return `${date}T${time || "00:00"}`;
-}
-
-function getMonthStartKey(dateKey: string): string {
-  if (!dateKey) return "";
-  return `${dateKey.slice(0, 7)}-01`;
-}
-
-function addMonths(key: string, months: number): string {
-  if (!key) return key;
-  const [year, month] = key.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  date.setUTCMonth(date.getUTCMonth() + months);
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-01`;
-}
-
-function buildMonthGrid(monthKey: string): { dateKey: string; inMonth: boolean }[] {
-  if (!monthKey) return [];
-  const [year, month] = monthKey.split("-").map(Number);
-  const firstDay = new Date(Date.UTC(year, month - 1, 1));
-  const startOffset = (firstDay.getUTCDay() + 6) % 7;
-  const start = new Date(firstDay);
-  start.setUTCDate(start.getUTCDate() - startOffset);
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const day = new Date(start);
-    day.setUTCDate(start.getUTCDate() + index);
-    const dateKey = formatLocalDateKey(day);
-    return {
-      dateKey,
-      inMonth: dateKey.startsWith(monthKey.slice(0, 7))
-    };
-  });
-}
-
 function formatClock(totalSeconds: number): string {
-  return `${Math.floor(totalSeconds / 3600)}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(
+  return `${Math.floor(totalSeconds / 3600)}:${String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0")}:${String(
     totalSeconds % 60
-  )}`;
-}
-
-function formatLocalDateKey(value: Date): string {
-  return toTokyoDateKey(value);
+  ).padStart(2, "0")}`;
 }
 
 function formatDayLabel(dayKey: string): string {
@@ -100,29 +61,6 @@ function formatDayLabel(dayKey: string): string {
 
 function getDateKey(value: string): string {
   return toTokyoDateKey(value);
-}
-
-function getStartOfWeekKey(value: string): string {
-  const parts = toTokyoDateKey(value);
-  const [year, month, day] = parts.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const mondayOffset = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - mondayOffset);
-  return formatLocalDateKey(date);
-}
-
-function addDays(key: string, days: number): string {
-  if (!key) return key;
-  const [year, month, day] = key.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
-  return formatLocalDateKey(date);
-}
-
-function getWeekLabel(startKey: string): string {
-  const [, startMonth, startDay] = startKey.split("-").map(Number);
-  const [, endMonth, endDay] = addDays(startKey, 6).split("-").map(Number);
-  return `${startMonth}/${startDay} - ${endMonth}/${endDay}`;
 }
 
 function getDurationSeconds(start: string, end: string | null, nowIso?: string): number {
@@ -149,19 +87,6 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function statusLabel(status: TaskStatus): string {
-  switch (status) {
-    case "pending":
-      return "未着手";
-    case "completed":
-      return "完了";
-    case "archived":
-      return "アーカイブ";
-    default:
-      return status;
-  }
 }
 
 function splitByDay(entries: TimeEntryDetail[], weekStart: string): Record<string, TimeEntryDetail[]> {
@@ -227,38 +152,22 @@ function DateTimePopoverField({
   placeholder?: string;
 }) {
   const popoverId = useId();
-  const rootId = useId();
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const split = splitDateTimeLocal(value);
 
-  useEffect(() => {
-    if (!open) return;
-
-    function onPointerDown(event: PointerEvent) {
-      const target = event.target as Node;
-      const current = document.getElementById(rootId);
-      if (current?.contains(target)) return;
-      setOpen(false);
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, rootId]);
+  useDismissableLayer({
+    enabled: open,
+    refs: [rootRef],
+    onDismiss: () => setOpen(false)
+  });
 
   const text = split.date
     ? `${split.date.replaceAll("-", "/")} ${split.time || "00:00"}`
     : placeholder;
 
   return (
-    <div id={rootId} className="relative space-y-2">
+    <div ref={rootRef} className="relative space-y-2">
       <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted)]">{label}</p>
       <button
         type="button"
@@ -373,24 +282,11 @@ function TimerPopoverField({
   const calendarDays = useMemo(() => buildMonthGrid(visibleMonthKey), [visibleMonthKey]);
   const currentMonthLabel = visibleMonthKey ? `${visibleMonthKey.slice(0, 4)}年${Number(visibleMonthKey.slice(5, 7))}月` : "";
 
-  useEffect(() => {
-    function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
+  useDismissableLayer({
+    enabled: open,
+    refs: [rootRef],
+    onDismiss: () => setOpen(false)
+  });
 
   useEffect(() => {
     if (!open) {
@@ -536,7 +432,7 @@ function TimerPopoverField({
             </div>
 
             <div className="mt-3 grid grid-cols-7 text-center text-[11px] font-semibold text-[color:var(--muted)]">
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+              {["日", "月", "火", "水", "木", "金", "土"].map((label) => (
                 <div key={label} className="pb-2">
                   {label}
                 </div>
@@ -896,7 +792,7 @@ export default function TimeEntriesPage() {
       tasks.map((task) => ({
         value: String(task.id),
         label: task.title,
-        description: `${task.category} · ${statusLabel(task.status)}`
+        description: `${task.category} · ${toTaskStatusLabel(task.status)}`
       })),
     [tasks]
   );
@@ -1241,7 +1137,7 @@ export default function TimeEntriesPage() {
                           key={hour}
                           className="flex h-16 items-start justify-end border-b border-[color:var(--line)] px-3 pt-2 text-[11px] text-[color:var(--muted)]"
                         >
-                          {pad(hour)}:00
+                          {String(hour).padStart(2, "0")}:00
                         </div>
                       ))}
                     </div>
@@ -1302,7 +1198,7 @@ export default function TimeEntriesPage() {
                         key={hour}
                         className="flex h-16 items-start justify-end border-b border-[color:var(--line)] px-2 pt-2 text-[10px] text-[color:var(--muted)]"
                       >
-                        {pad(hour)}:00
+                        {String(hour).padStart(2, "0")}:00
                       </div>
                     ))}
                   </div>
@@ -1371,7 +1267,7 @@ export default function TimeEntriesPage() {
                                   {entry.task_category}
                                 </span>
                                 <span className="rounded-full bg-[color:var(--bg-soft)] px-2.5 py-1 font-medium">
-                                  {statusLabel(entry.task_status)}
+                                  {toTaskStatusLabel(entry.task_status)}
                                 </span>
                               </div>
                             </div>

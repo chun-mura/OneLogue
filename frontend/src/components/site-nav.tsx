@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useDismissableLayer } from "@/hooks/useDismissableLayer";
 
 const navItems = [
   { href: "/", label: "作業場" },
@@ -26,26 +27,11 @@ export function SiteNav() {
     return { ...item, active };
   });
 
-  useEffect(() => {
-    function onPointerDown(event: PointerEvent) {
-      if (!mobileRootRef.current?.contains(event.target as Node)) {
-        setMobileOpen(false);
-      }
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMobileOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
+  useDismissableLayer({
+    enabled: mobileOpen,
+    refs: [mobileRootRef],
+    onDismiss: () => setMobileOpen(false)
+  });
 
   return (
     <>

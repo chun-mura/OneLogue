@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
+import { useDismissableLayer } from "@/hooks/useDismissableLayer";
 import { api, Category, Task, TaskStatus, TimeEntry } from "@/lib/api";
 import {
   addTokyoDays,
@@ -12,14 +13,17 @@ import {
   formatTokyoTime,
   getTokyoCalendarDays,
   getTokyoMonthStartDate,
+  mergeDateTimeLocal,
   parseTokyoDateTimeLocal,
   parseInstantMs,
+  splitDateTimeLocal,
   startOfTokyoDayMs,
   toTokyoDateInputValue,
   toTokyoDateKey,
   toTokyoDateTimeLocalValue,
   toTokyoTimeInputValue
 } from "@/lib/datetime";
+import { toTaskStatusLabel } from "@/lib/task-status";
 import { useAppTime } from "@/components/app-time-provider";
 
 type TaskFormState = {
@@ -53,17 +57,6 @@ const dueTimeOptions = Array.from({ length: 48 }, (_, index) => {
   const minutes = index % 2 === 0 ? "00" : "30";
   return `${hours}:${minutes}`;
 });
-
-function splitDateTimeLocal(value: string): { date: string; time: string } {
-  if (!value) return { date: "", time: "" };
-  const [date = "", time = ""] = value.split("T");
-  return { date, time: time.slice(0, 5) };
-}
-
-function mergeDateTimeLocal(date: string, time: string): string {
-  if (!date) return "";
-  return `${date}T${time || "00:00"}`;
-}
 
 function addMonthsToMonthKey(monthKey: string, months: number): string {
   if (!monthKey) return monthKey;
@@ -117,26 +110,11 @@ function ActiveTimerPopoverField({
   );
   const currentMonthLabel = formatTokyoMonthLabel(new Date(`${visibleMonthKey}T00:00:00Z`));
 
-  useEffect(() => {
-    if (!open) return;
-
-    function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        onOpenChange(false);
-      }
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onOpenChange(false);
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onOpenChange, open]);
+  useDismissableLayer({
+    enabled: open,
+    refs: [rootRef],
+    onDismiss: () => onOpenChange(false)
+  });
 
   useEffect(() => {
     if (!open || monthKey) return;
@@ -346,19 +324,6 @@ function isOverdue(value: string | null, todayKey: string, nowIso: string): bool
     return due < parseInstantMs(nowIso);
   }
   return toTokyoDateKey(new Date(due)) < todayKey;
-}
-
-function statusLabel(status: TaskStatus): string {
-  switch (status) {
-    case "pending":
-      return "未着手";
-    case "completed":
-      return "完了";
-    case "archived":
-      return "アーカイブ";
-    default:
-      return status;
-  }
 }
 
 function dueChipTone(task: Task, todayKey: string, nowIso: string): string {
@@ -731,7 +696,7 @@ function TaskRow({
               </div>
             ) : null}
           </div>
-          <span className="text-[color:var(--muted)]">{statusLabel(task.status)}</span>
+          <span className="text-[color:var(--muted)]">{toTaskStatusLabel(task.status)}</span>
         </div>
       </div>
 
@@ -940,130 +905,50 @@ export default function HomePage() {
     setActiveStartTimeInput(toTokyoDateTimeLocalValue(activeEntry.start_time));
   }, [activeEntry]);
 
-  useEffect(() => {
-    if (!duePickerOpen) return;
+  const dismissDuePicker = useCallback(() => {
+    setDuePickerOpen(false);
+    setTimePickerOpen(false);
+  }, []);
 
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (duePickerRef.current?.contains(target)) return;
-      if (dueTriggerRef.current?.contains(target)) return;
-      if (dueEditTriggerRef.current?.contains(target)) return;
-      setDuePickerOpen(false);
-      setTimePickerOpen(false);
-    }
+  const dismissEditingCategory = useCallback(() => {
+    setEditingCategoryTaskId(null);
+    setEditingCategoryValue("");
+  }, []);
 
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setDuePickerOpen(false);
-        setTimePickerOpen(false);
-      }
-    }
+  useDismissableLayer({
+    enabled: duePickerOpen,
+    refs: [duePickerRef, dueTriggerRef, dueEditTriggerRef],
+    onDismiss: dismissDuePicker,
+    pointerEvent: "mousedown"
+  });
 
-    document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [duePickerOpen]);
+  useDismissableLayer({
+    enabled: Boolean(editingCategoryTaskId),
+    refs: [categoryMenuRef, categoryTriggerRef],
+    onDismiss: dismissEditingCategory,
+    pointerEvent: "mousedown"
+  });
 
-  useEffect(() => {
-    if (!editingCategoryTaskId) return;
+  useDismissableLayer({
+    enabled: createCategoryMenuOpen,
+    refs: [createCategoryMenuRef, createCategoryTriggerRef],
+    onDismiss: () => setCreateCategoryMenuOpen(false),
+    pointerEvent: "mousedown"
+  });
 
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (categoryMenuRef.current?.contains(target)) return;
-      if (categoryTriggerRef.current?.contains(target)) return;
-      setEditingCategoryTaskId(null);
-      setEditingCategoryValue("");
-    }
+  useDismissableLayer({
+    enabled: categoryFilterMenuOpen,
+    refs: [categoryFilterMenuRef, categoryFilterTriggerRef],
+    onDismiss: () => setCategoryFilterMenuOpen(false),
+    pointerEvent: "mousedown"
+  });
 
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setEditingCategoryTaskId(null);
-        setEditingCategoryValue("");
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [editingCategoryTaskId]);
-
-  useEffect(() => {
-    if (!createCategoryMenuOpen) return;
-
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (createCategoryMenuRef.current?.contains(target)) return;
-      if (createCategoryTriggerRef.current?.contains(target)) return;
-      setCreateCategoryMenuOpen(false);
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setCreateCategoryMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [createCategoryMenuOpen]);
-
-  useEffect(() => {
-    if (!categoryFilterMenuOpen) return;
-
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (categoryFilterMenuRef.current?.contains(target)) return;
-      if (categoryFilterTriggerRef.current?.contains(target)) return;
-      setCategoryFilterMenuOpen(false);
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setCategoryFilterMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [categoryFilterMenuOpen]);
-
-  useEffect(() => {
-    if (!taskSortMenuOpen) return;
-
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (taskSortMenuRef.current?.contains(target)) return;
-      if (taskSortTriggerRef.current?.contains(target)) return;
-      setTaskSortMenuOpen(false);
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setTaskSortMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [taskSortMenuOpen]);
+  useDismissableLayer({
+    enabled: taskSortMenuOpen,
+    refs: [taskSortMenuRef, taskSortTriggerRef],
+    onDismiss: () => setTaskSortMenuOpen(false),
+    pointerEvent: "mousedown"
+  });
 
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

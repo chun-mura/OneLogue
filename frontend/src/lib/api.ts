@@ -48,7 +48,7 @@ export type SummaryResponse = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request(path: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -62,60 +62,68 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const body = await response.text();
     throw new Error(body || `Request failed: ${response.status}`);
   }
+  return response;
+}
 
+async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await request(path, options);
   if (response.status === 204) {
-    return null as T;
+    throw new Error("Expected JSON response but received no content");
   }
+  const json = (await response.json()) as unknown;
+  return json as T;
+}
 
-  return (await response.json()) as T;
+async function requestVoid(path: string, options?: RequestInit): Promise<void> {
+  await request(path, options);
 }
 
 export const api = {
-  listCategories: () => request<Category[]>("/categories"),
+  listCategories: () => requestJson<Category[]>("/categories"),
   createCategory: (payload: Pick<Category, "name">) =>
-    request<Category>("/categories", { method: "POST", body: JSON.stringify(payload) }),
+    requestJson<Category>("/categories", { method: "POST", body: JSON.stringify(payload) }),
   deleteCategory: (categoryId: number) =>
-    request<void>(`/categories/${categoryId}`, { method: "DELETE" }),
-  listTasks: () => request<Task[]>("/tasks"),
+    requestVoid(`/categories/${categoryId}`, { method: "DELETE" }),
+  listTasks: () => requestJson<Task[]>("/tasks"),
   getActiveTimer: () =>
-    request<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
-  listTimeEntries: () => request<TimeEntryDetail[]>("/time-entries"),
+    requestJson<{ message: string; active_entry: TimeEntry | null }>("/tasks/active"),
+  listTimeEntries: () => requestJson<TimeEntryDetail[]>("/time-entries"),
   createTimeEntry: (payload: TimeEntryCreatePayload) =>
-    request<TimeEntry>("/time-entries", {
+    requestJson<TimeEntry>("/time-entries", {
       method: "POST",
       body: JSON.stringify(payload)
     }),
   createTask: (payload: Omit<Task, "id" | "created_at">) =>
-    request<Task>("/tasks", { method: "POST", body: JSON.stringify(payload) }),
+    requestJson<Task>("/tasks", { method: "POST", body: JSON.stringify(payload) }),
   updateTask: (taskId: number, payload: Partial<Omit<Task, "id" | "created_at">>) =>
-    request<Task>(`/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteTask: (taskId: number) => request<void>(`/tasks/${taskId}`, { method: "DELETE" }),
+    requestJson<Task>(`/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteTask: (taskId: number) => requestVoid(`/tasks/${taskId}`, { method: "DELETE" }),
   startTask: (taskId: number) =>
-    request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
+    requestJson<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
       method: "POST"
     }),
   updateTaskStartTime: (taskId: number, start_time: string) =>
-    request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
+    requestJson<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/start`, {
       method: "PATCH",
       body: JSON.stringify({ start_time })
     }),
   stopTask: (taskId: number) =>
-    request<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/stop`, {
+    requestJson<{ message: string; active_entry: TimeEntry | null }>(`/tasks/${taskId}/stop`, {
       method: "POST"
     }),
   updateTimeEntry: (
     entryId: number,
     payload: Partial<Pick<TimeEntry, "start_time" | "end_time">>
   ) =>
-    request<TimeEntry>(`/time-entries/${entryId}`, {
+    requestJson<TimeEntry>(`/time-entries/${entryId}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
-  deleteTimeEntry: (entryId: number) => request<void>(`/time-entries/${entryId}`, { method: "DELETE" }),
+  deleteTimeEntry: (entryId: number) => requestVoid(`/time-entries/${entryId}`, { method: "DELETE" }),
   getSummary: (range: "daily" | "weekly" | "monthly" | "custom", from?: string, to?: string) => {
     const params = new URLSearchParams({ range });
     if (from) params.append("from", from);
     if (to) params.append("to", to);
-    return request<SummaryResponse>(`/stats/summary?${params.toString()}`);
+    return requestJson<SummaryResponse>(`/stats/summary?${params.toString()}`);
   }
 };

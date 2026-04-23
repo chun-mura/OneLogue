@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useDismissableLayer } from "@/hooks/useDismissableLayer";
 
 type DropdownOption = {
   value: string;
@@ -36,16 +37,11 @@ export function CustomDropdown({
     [options, value]
   );
 
-  useEffect(() => {
-    function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, []);
+  useDismissableLayer({
+    enabled: open,
+    refs: [rootRef],
+    onDismiss: () => setOpen(false)
+  });
 
   useEffect(() => {
     if (!open) {
