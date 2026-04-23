@@ -528,21 +528,31 @@ function IconChevronRight() {
 
 function SectionHeader({
   title,
-  count
+  count,
+  collapsed,
+  onToggle,
+  sectionId
 }: {
   title: string;
   count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  sectionId: string;
 }) {
   return (
-    <div className="mb-2 flex items-center gap-3 px-1">
-      <span className="text-[color:var(--muted)]">
+    <button
+      type="button"
+      className="mb-2 flex w-full items-center gap-3 rounded-[14px] px-1 py-1 text-left hover:bg-white/[0.03]"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      aria-controls={sectionId}
+    >
+      <span className={`text-[color:var(--muted)] transition-transform ${collapsed ? "-rotate-90" : ""}`}>
         <IconChevronDown />
       </span>
-      <span className="text-[15px] font-semibold text-[color:var(--text)]">
-        {title}
-      </span>
+      <span className="text-[15px] font-semibold text-[color:var(--text)]">{title}</span>
       <span className="text-sm text-[color:var(--muted)]">{count}</span>
-    </div>
+    </button>
   );
 }
 
@@ -798,6 +808,12 @@ export default function HomePage() {
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [taskSort, setTaskSort] = useState<TaskSort>("dueAsc");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [collapsedSections, setCollapsedSections] = useState<Record<SectionKey, boolean>>({
+    overdue: false,
+    today: false,
+    upcoming: false,
+    completed: false
+  });
   const [editingActiveStartTime, setEditingActiveStartTime] = useState(false);
   const [activeStartTimeInput, setActiveStartTimeInput] = useState("");
   const [duePickerOpen, setDuePickerOpen] = useState(false);
@@ -875,6 +891,13 @@ export default function HomePage() {
   }, [tasks, categoryFilter, dueFilter, taskSort, todayKey, nowIso]);
 
   const calendarDays = useMemo(() => getTokyoCalendarDays(calendarMonth), [calendarMonth]);
+
+  function toggleSection(section: SectionKey) {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  }
 
   async function refreshTasks() {
     const data = await api.listTasks();
@@ -2347,198 +2370,246 @@ export default function HomePage() {
             <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">タスクを整理する</h2>
           </div>
         </div>
-          {groupedTasks.overdue.length > 0 ? (
-            <div className="mb-3">
-              <SectionHeader title="遅延" count={groupedTasks.overdue.length} />
-              <ul className="divide-y divide-white/[0.03]">
-                {groupedTasks.overdue.map((task) => (
-                  <li key={task.id}>
-                    <TaskRow
-                      task={task}
-                      isActive={activeEntry?.task_id === task.id}
-                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
-                      onStart={() => void handleStart(task.id)}
-                      onStop={() => void handleStop(task.id)}
-                      isEditingTitle={editingTitleTaskId === task.id}
-                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
-                      onEditTitleStart={() => {
-                        setEditingTitleTaskId(task.id);
-                        setEditingTitleValue(task.title);
-                      }}
-                      onEditTitleChange={setEditingTitleValue}
-                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
-                      onEditTitleCancel={() => {
-                        setEditingTitleTaskId(null);
-                        setEditingTitleValue("");
-                      }}
-                      isEditingDue={editingDueTaskId === task.id}
-                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      isEditingCategory={editingCategoryTaskId === task.id}
-                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
-                      categoryOptions={categories.map((category) => category.name)}
-                      categoryMenuRef={categoryMenuRef}
-                      categoryTriggerRef={categoryTriggerRef}
-                      todayKey={todayKey}
-                      nowIso={nowIso}
-                      onEditCategoryStart={() => {
-                        setEditingCategoryTaskId(task.id);
-                        setEditingCategoryValue(task.category);
-                      }}
-                      onEditCategoryChange={setEditingCategoryValue}
-                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onToggleComplete={() => void handleComplete(task.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <div className="mb-3">
+            <SectionHeader
+              title="遅延"
+              count={groupedTasks.overdue.length}
+              collapsed={collapsedSections.overdue}
+            onToggle={() => toggleSection("overdue")}
+            sectionId="task-section-overdue"
+            />
+            {!collapsedSections.overdue && groupedTasks.overdue.length > 0 ? (
+              <div id="task-section-overdue">
+                <ul className="divide-y divide-white/[0.03]">
+                  {groupedTasks.overdue.map((task) => (
+                    <li key={task.id}>
+                      <TaskRow
+                        task={task}
+                        isActive={activeEntry?.task_id === task.id}
+                        isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                        onStart={() => void handleStart(task.id)}
+                        onStop={() => void handleStop(task.id)}
+                        isEditingTitle={editingTitleTaskId === task.id}
+                        editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                        onEditTitleStart={() => {
+                          setEditingTitleTaskId(task.id);
+                          setEditingTitleValue(task.title);
+                        }}
+                        onEditTitleChange={setEditingTitleValue}
+                        onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                        onEditTitleCancel={() => {
+                          setEditingTitleTaskId(null);
+                          setEditingTitleValue("");
+                        }}
+                        isEditingDue={editingDueTaskId === task.id}
+                        onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                        isEditingCategory={editingCategoryTaskId === task.id}
+                        editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                        categoryOptions={categories.map((category) => category.name)}
+                        categoryMenuRef={categoryMenuRef}
+                        categoryTriggerRef={categoryTriggerRef}
+                        todayKey={todayKey}
+                        nowIso={nowIso}
+                        onEditCategoryStart={() => {
+                          setEditingCategoryTaskId(task.id);
+                          setEditingCategoryValue(task.category);
+                        }}
+                        onEditCategoryChange={setEditingCategoryValue}
+                        onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                        onToggleComplete={() => void handleComplete(task.id)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : !collapsedSections.overdue ? (
+              <div id="task-section-overdue" className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">
+                遅延中のタスクはありません
+              </div>
+            ) : null}
+          </div>
 
           <div className="mb-3">
-            <SectionHeader title="今日" count={groupedTasks.today.length} />
-            {groupedTasks.today.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今日のタスクはありません</div>
+            <SectionHeader
+              title="今日"
+              count={groupedTasks.today.length}
+              collapsed={collapsedSections.today}
+              onToggle={() => toggleSection("today")}
+              sectionId="task-section-today"
+            />
+            {!collapsedSections.today ? (
+              <div id="task-section-today">
+                {groupedTasks.today.length === 0 ? (
+                  <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今日のタスクはありません</div>
+                ) : (
+                  <ul className="divide-y divide-white/[0.03]">
+                    {groupedTasks.today.map((task) => (
+                      <li key={task.id}>
+                        <TaskRow
+                          task={task}
+                          isActive={activeEntry?.task_id === task.id}
+                          isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                          onStart={() => void handleStart(task.id)}
+                          onStop={() => void handleStop(task.id)}
+                          isEditingTitle={editingTitleTaskId === task.id}
+                          editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                          onEditTitleStart={() => {
+                            setEditingTitleTaskId(task.id);
+                            setEditingTitleValue(task.title);
+                          }}
+                          onEditTitleChange={setEditingTitleValue}
+                          onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                          onEditTitleCancel={() => {
+                            setEditingTitleTaskId(null);
+                            setEditingTitleValue("");
+                          }}
+                          isEditingDue={editingDueTaskId === task.id}
+                          onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                          isEditingCategory={editingCategoryTaskId === task.id}
+                          editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                          categoryOptions={categories.map((category) => category.name)}
+                          categoryMenuRef={categoryMenuRef}
+                          categoryTriggerRef={categoryTriggerRef}
+                          todayKey={todayKey}
+                          nowIso={nowIso}
+                          onEditCategoryStart={() => {
+                            setEditingCategoryTaskId(task.id);
+                            setEditingCategoryValue(task.category);
+                          }}
+                          onEditCategoryChange={setEditingCategoryValue}
+                          onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onToggleComplete={() => void handleComplete(task.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ) : (
-              <ul className="divide-y divide-white/[0.03]">
-                {groupedTasks.today.map((task) => (
-                  <li key={task.id}>
-                    <TaskRow
-                      task={task}
-                      isActive={activeEntry?.task_id === task.id}
-                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
-                      onStart={() => void handleStart(task.id)}
-                      onStop={() => void handleStop(task.id)}
-                      isEditingTitle={editingTitleTaskId === task.id}
-                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
-                      onEditTitleStart={() => {
-                        setEditingTitleTaskId(task.id);
-                        setEditingTitleValue(task.title);
-                      }}
-                      onEditTitleChange={setEditingTitleValue}
-                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
-                      onEditTitleCancel={() => {
-                        setEditingTitleTaskId(null);
-                        setEditingTitleValue("");
-                      }}
-                      isEditingDue={editingDueTaskId === task.id}
-                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      isEditingCategory={editingCategoryTaskId === task.id}
-                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
-                      categoryOptions={categories.map((category) => category.name)}
-                      categoryMenuRef={categoryMenuRef}
-                      categoryTriggerRef={categoryTriggerRef}
-                      todayKey={todayKey}
-                      nowIso={nowIso}
-                      onEditCategoryStart={() => {
-                        setEditingCategoryTaskId(task.id);
-                        setEditingCategoryValue(task.category);
-                      }}
-                      onEditCategoryChange={setEditingCategoryValue}
-                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onToggleComplete={() => void handleComplete(task.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              null
             )}
           </div>
 
           <div className="mb-3">
-            <SectionHeader title="今後" count={groupedTasks.upcoming.length} />
-            {groupedTasks.upcoming.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今後のタスクはありません</div>
+            <SectionHeader
+              title="今後"
+              count={groupedTasks.upcoming.length}
+              collapsed={collapsedSections.upcoming}
+              onToggle={() => toggleSection("upcoming")}
+              sectionId="task-section-upcoming"
+            />
+            {!collapsedSections.upcoming ? (
+              <div id="task-section-upcoming">
+                {groupedTasks.upcoming.length === 0 ? (
+                  <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今後のタスクはありません</div>
+                ) : (
+                  <ul className="divide-y divide-white/[0.03]">
+                    {groupedTasks.upcoming.map((task) => (
+                      <li key={task.id}>
+                        <TaskRow
+                          task={task}
+                          isActive={activeEntry?.task_id === task.id}
+                          isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
+                          onStart={() => void handleStart(task.id)}
+                          onStop={() => void handleStop(task.id)}
+                          isEditingTitle={editingTitleTaskId === task.id}
+                          editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                          onEditTitleStart={() => {
+                            setEditingTitleTaskId(task.id);
+                            setEditingTitleValue(task.title);
+                          }}
+                          onEditTitleChange={setEditingTitleValue}
+                          onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                          onEditTitleCancel={() => {
+                            setEditingTitleTaskId(null);
+                            setEditingTitleValue("");
+                          }}
+                          isEditingDue={editingDueTaskId === task.id}
+                          onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                          isEditingCategory={editingCategoryTaskId === task.id}
+                          editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                          categoryOptions={categories.map((category) => category.name)}
+                          categoryMenuRef={categoryMenuRef}
+                          categoryTriggerRef={categoryTriggerRef}
+                          todayKey={todayKey}
+                          nowIso={nowIso}
+                          onEditCategoryStart={() => {
+                            setEditingCategoryTaskId(task.id);
+                            setEditingCategoryValue(task.category);
+                          }}
+                          onEditCategoryChange={setEditingCategoryValue}
+                          onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onToggleComplete={() => void handleComplete(task.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ) : (
-              <ul className="divide-y divide-white/[0.03]">
-                {groupedTasks.upcoming.map((task) => (
-                  <li key={task.id}>
-                    <TaskRow
-                      task={task}
-                      isActive={activeEntry?.task_id === task.id}
-                      isAnimatingComplete={animatingCompleteTaskIds.includes(task.id)}
-                      onStart={() => void handleStart(task.id)}
-                      onStop={() => void handleStop(task.id)}
-                      isEditingTitle={editingTitleTaskId === task.id}
-                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
-                      onEditTitleStart={() => {
-                        setEditingTitleTaskId(task.id);
-                        setEditingTitleValue(task.title);
-                      }}
-                      onEditTitleChange={setEditingTitleValue}
-                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
-                      onEditTitleCancel={() => {
-                        setEditingTitleTaskId(null);
-                        setEditingTitleValue("");
-                      }}
-                      isEditingDue={editingDueTaskId === task.id}
-                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      isEditingCategory={editingCategoryTaskId === task.id}
-                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
-                      categoryOptions={categories.map((category) => category.name)}
-                      categoryMenuRef={categoryMenuRef}
-                      categoryTriggerRef={categoryTriggerRef}
-                      todayKey={todayKey}
-                      nowIso={nowIso}
-                      onEditCategoryStart={() => {
-                        setEditingCategoryTaskId(task.id);
-                        setEditingCategoryValue(task.category);
-                      }}
-                      onEditCategoryChange={setEditingCategoryValue}
-                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onToggleComplete={() => void handleComplete(task.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              null
             )}
           </div>
 
           <div>
-            <SectionHeader title="完了" count={groupedTasks.completed.length} />
-            {groupedTasks.completed.length === 0 ? (
-              <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">完了したタスクはありません</div>
+            <SectionHeader
+              title="完了"
+              count={groupedTasks.completed.length}
+              collapsed={collapsedSections.completed}
+              onToggle={() => toggleSection("completed")}
+              sectionId="task-section-completed"
+            />
+            {!collapsedSections.completed ? (
+              <div id="task-section-completed">
+                {groupedTasks.completed.length === 0 ? (
+                  <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">完了したタスクはありません</div>
+                ) : (
+                  <ul className="divide-y divide-white/[0.03]">
+                    {groupedTasks.completed.map((task) => (
+                      <li key={task.id}>
+                        <TaskRow
+                          task={task}
+                          isActive={false}
+                          isAnimatingComplete={false}
+                          onStart={() => undefined}
+                          onStop={() => undefined}
+                          isEditingTitle={editingTitleTaskId === task.id}
+                          editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
+                          onEditTitleStart={() => {
+                            setEditingTitleTaskId(task.id);
+                            setEditingTitleValue(task.title);
+                          }}
+                          onEditTitleChange={setEditingTitleValue}
+                          onEditTitleCommit={() => void handleSaveTaskTitle(task)}
+                          onEditTitleCancel={() => {
+                            setEditingTitleTaskId(null);
+                            setEditingTitleValue("");
+                          }}
+                          isEditingDue={editingDueTaskId === task.id}
+                          onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
+                          isEditingCategory={editingCategoryTaskId === task.id}
+                          editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
+                          categoryOptions={categories.map((category) => category.name)}
+                          categoryMenuRef={categoryMenuRef}
+                          categoryTriggerRef={categoryTriggerRef}
+                          todayKey={todayKey}
+                          nowIso={nowIso}
+                          onEditCategoryStart={() => {
+                            setEditingCategoryTaskId(task.id);
+                            setEditingCategoryValue(task.category);
+                          }}
+                          onEditCategoryChange={setEditingCategoryValue}
+                          onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onToggleComplete={() => void handleReopen(task.id)}
+                          onDelete={() => setDeleteConfirmTask(task)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ) : (
-              <ul className="divide-y divide-white/[0.03]">
-                {groupedTasks.completed.map((task) => (
-                  <li key={task.id}>
-                    <TaskRow
-                      task={task}
-                      isActive={false}
-                      isAnimatingComplete={false}
-                      onStart={() => undefined}
-                      onStop={() => undefined}
-                      isEditingTitle={editingTitleTaskId === task.id}
-                      editingTitleValue={editingTitleTaskId === task.id ? editingTitleValue : task.title}
-                      onEditTitleStart={() => {
-                        setEditingTitleTaskId(task.id);
-                        setEditingTitleValue(task.title);
-                      }}
-                      onEditTitleChange={setEditingTitleValue}
-                      onEditTitleCommit={() => void handleSaveTaskTitle(task)}
-                      onEditTitleCancel={() => {
-                        setEditingTitleTaskId(null);
-                        setEditingTitleValue("");
-                      }}
-                      isEditingDue={editingDueTaskId === task.id}
-                      onEditDueStart={(anchor) => openTaskDuePicker(task, anchor)}
-                      isEditingCategory={editingCategoryTaskId === task.id}
-                      editingCategoryValue={editingCategoryTaskId === task.id ? editingCategoryValue : task.category}
-                      categoryOptions={categories.map((category) => category.name)}
-                      categoryMenuRef={categoryMenuRef}
-                      categoryTriggerRef={categoryTriggerRef}
-                      todayKey={todayKey}
-                      nowIso={nowIso}
-                      onEditCategoryStart={() => {
-                        setEditingCategoryTaskId(task.id);
-                        setEditingCategoryValue(task.category);
-                      }}
-                      onEditCategoryChange={setEditingCategoryValue}
-                      onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
-                      onToggleComplete={() => void handleReopen(task.id)}
-                      onDelete={() => setDeleteConfirmTask(task)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              null
             )}
           </div>
         </section>

@@ -598,6 +598,7 @@ export default function TimeEntriesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [weekStart, setWeekStart] = useState("");
   const [weekInitialized, setWeekInitialized] = useState(false);
+  const [selectedDayKey, setSelectedDayKey] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [quickTaskId, setQuickTaskId] = useState("");
   const [manualStart, setManualStart] = useState("");
@@ -613,6 +614,9 @@ export default function TimeEntriesPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null);
+  const desktopScrollRef = useRef<HTMLDivElement | null>(null);
+  const mobileScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollCenteredRef = useRef(false);
 
   async function refresh() {
     const [entryData, taskData, activeData] = await Promise.all([
@@ -657,6 +661,28 @@ export default function TimeEntriesPage() {
     if (!isMounted || manualInitialized || !clientNowIso) return;
     setManualInitialized(true);
   }, [clientNowIso, isMounted, manualInitialized]);
+
+  useEffect(() => {
+    if (!weekStart) return;
+    const weekEnd = addDays(weekStart, 6);
+    if (selectedDayKey && selectedDayKey >= weekStart && selectedDayKey <= weekEnd) return;
+    const fallback = todayKey >= weekStart && todayKey <= weekEnd ? todayKey : weekStart;
+    setSelectedDayKey(fallback);
+  }, [weekStart, todayKey, selectedDayKey]);
+
+  useEffect(() => {
+    if (scrollCenteredRef.current) return;
+    if (viewMode !== "calendar" || !clientNowIso) return;
+    const offsetPx = (getCurrentMinuteOffset(clientNowIso) / 60) * 64;
+    let applied = false;
+    for (const el of [desktopScrollRef.current, mobileScrollRef.current]) {
+      if (!el) continue;
+      const h = el.clientHeight;
+      el.scrollTo({ top: Math.max(0, offsetPx - (h > 0 ? h / 2 : 240)) });
+      if (h > 0) applied = true;
+    }
+    if (applied) scrollCenteredRef.current = true;
+  }, [viewMode, clientNowIso]);
 
   useEffect(() => {
     if (activeTaskId === null) return;
@@ -877,6 +903,94 @@ export default function TimeEntriesPage() {
 
   const isEditingRunningEntry = editing?.end_time === null;
 
+  const renderNowLine = () => (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      <div
+        className="absolute left-1/2 top-0 w-1 -translate-x-1/2 rounded-full bg-[color:var(--accent)]/85 shadow-[0_0_18px_rgba(192,113,204,0.35)]"
+        style={{ height: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
+      />
+      <div
+        className="absolute left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-[color:var(--accent)] shadow-[0_0_0_5px_rgba(192,113,204,0.18)]"
+        style={{ top: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
+      />
+      <div
+        className="absolute left-[calc(50%+10px)] -translate-y-1/2 rounded-full border border-[color:var(--accent)] bg-[color:var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)] shadow-[0_0_16px_rgba(192,113,204,0.16)]"
+        style={{ top: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
+      >
+        Now
+      </div>
+    </div>
+  );
+
+  const renderEntryCard = (entry: TimeEntryDetail) => {
+    const color = getCategoryColor(entry.task_category);
+    const position = clampCalendarPosition(entry, clientNowIso || undefined);
+    const isDimmed = selectedCategory !== null && selectedCategory !== entry.task_category;
+    const isRunning = entry.end_time === null;
+    return (
+      <div
+        key={entry.id}
+        className={[
+          "group absolute left-2 right-2 overflow-hidden rounded-[18px] border p-3 text-left shadow-[0_10px_25px_rgba(0,0,0,0.18)] transition hover:translate-y-[-1px]",
+          isDimmed ? "opacity-45" : "opacity-100",
+          isRunning ? "ring-1 ring-[color:var(--accent)] ring-offset-0" : "",
+          "cursor-pointer"
+        ].join(" ")}
+        style={{
+          top: `${position.top}px`,
+          height: `${position.height}px`,
+          borderColor: hexToRgba(color, isDimmed ? 0.18 : 0.3),
+          background: isRunning
+            ? `linear-gradient(180deg, ${hexToRgba(color, 0.28)}, ${hexToRgba(color, 0.12)})`
+            : `linear-gradient(180deg, ${hexToRgba(color, isDimmed ? 0.08 : 0.16)}, ${hexToRgba(color, isDimmed ? 0.04 : 0.08)})`
+        }}
+        role="button"
+        tabIndex={0}
+        onClick={() => openEditor(entry)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openEditor(entry);
+          }
+        }}
+      >
+        <div
+          className={[
+            "absolute inset-x-0 top-0 h-1",
+            isRunning ? "animate-pulse" : ""
+          ].join(" ")}
+          style={{ backgroundColor: color }}
+        />
+        <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-[color:var(--text)]">
+          {entry.task_title}
+        </p>
+        <p className="mt-1.5 flex items-center gap-2 text-[10px] text-[color:var(--muted)]">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+          {entry.task_category}
+          {isRunning ? (
+            <span className="rounded-full border border-[color:var(--accent)] bg-[color:var(--accent-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)]">
+              Live
+            </span>
+          ) : null}
+        </p>
+        <div className="mt-auto flex items-end justify-end gap-2 pt-2 text-[11px] text-[color:var(--muted)]">
+          <span>{isRunning ? formatClock(getRunningSeconds(entry.start_time, clientNowIso)) : formatEntryDuration(entry)}</span>
+        </div>
+        {isRunning ? (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: "100%",
+                background: `linear-gradient(90deg, ${hexToRgba(color, 0.55)}, ${hexToRgba(color, 0.9)})`
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const mainView = (
     <section className="overflow-hidden rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] shadow-[var(--shadow)]">
       <div className="border-b border-[color:var(--line)] px-5 py-5 sm:px-6">
@@ -1073,7 +1187,8 @@ export default function TimeEntriesPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="overflow-hidden rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] shadow-[var(--shadow)]">
           {viewMode === "calendar" ? (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden sm:block overflow-x-auto">
               <div className="min-w-[980px]">
                 <div className="grid grid-cols-[72px_repeat(7,minmax(130px,1fr))] border-b border-[color:var(--line)] bg-[color:var(--surface-strong)]">
                   <div className="flex items-center justify-center border-r border-[color:var(--line)] py-4 text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">
@@ -1118,7 +1233,7 @@ export default function TimeEntriesPage() {
                 })}
                 </div>
 
-                <div className="max-h-[calc(100vh-360px)] overflow-auto">
+                <div ref={desktopScrollRef} className="max-h-[calc(100vh-360px)] overflow-auto">
                   <div className="grid grid-cols-[72px_repeat(7,minmax(130px,1fr))]">
                     <div className="border-r border-[color:var(--line)]">
                       {Array.from({ length: 24 }, (_, index) => index).map((hour) => (
@@ -1141,101 +1256,74 @@ export default function TimeEntriesPage() {
                             : ""
                         ].join(" ")}
                       >
-                        {dayKey === todayKey ? (
-                          <div className="pointer-events-none absolute inset-0 z-10">
-                            <div
-                              className="absolute left-1/2 top-0 w-1 -translate-x-1/2 rounded-full bg-[color:var(--accent)]/85 shadow-[0_0_18px_rgba(192,113,204,0.35)]"
-                              style={{ height: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
-                            />
-                            <div
-                              className="absolute left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-[color:var(--accent)] shadow-[0_0_0_5px_rgba(192,113,204,0.18)]"
-                              style={{ top: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
-                            />
-                            <div
-                              className="absolute left-[calc(50%+10px)] -translate-y-1/2 rounded-full border border-[color:var(--accent)] bg-[color:var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)] shadow-[0_0_16px_rgba(192,113,204,0.16)]"
-                              style={{ top: `${Math.max(0, Math.min(1536, (currentMinuteOffset / 60) * 64))}px` }}
-                            >
-                              Now
-                            </div>
-                          </div>
-                        ) : null}
+                        {dayKey === todayKey ? renderNowLine() : null}
                         {Array.from({ length: 24 }, (_, index) => index).map((index) => (
                           <div key={index} className="h-16 border-b border-[color:var(--line)]" />
                         ))}
-                        {(groupedEntries[dayKey] ?? []).map((entry) => {
-                          const color = getCategoryColor(entry.task_category);
-                          const position = clampCalendarPosition(entry, clientNowIso || undefined);
-                          const isDimmed = selectedCategory !== null && selectedCategory !== entry.task_category;
-                          const isRunning = entry.end_time === null;
-                          return (
-                            <div
-                              key={entry.id}
-                              className={[
-                                "group absolute left-2 right-2 overflow-hidden rounded-[18px] border p-3 text-left shadow-[0_10px_25px_rgba(0,0,0,0.18)] transition hover:translate-y-[-1px]",
-                                isDimmed ? "opacity-45" : "opacity-100",
-                                isRunning ? "ring-1 ring-[color:var(--accent)] ring-offset-0" : "",
-                                "cursor-pointer"
-                              ].join(" ")}
-                              style={{
-                                top: `${position.top}px`,
-                                height: `${position.height}px`,
-                                borderColor: hexToRgba(color, isDimmed ? 0.18 : 0.3),
-                                background: isRunning
-                                  ? `linear-gradient(180deg, ${hexToRgba(color, 0.28)}, ${hexToRgba(color, 0.12)})`
-                                  : `linear-gradient(180deg, ${hexToRgba(color, isDimmed ? 0.08 : 0.16)}, ${hexToRgba(color, isDimmed ? 0.04 : 0.08)})`
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => openEditor(entry)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  openEditor(entry);
-                                }
-                              }}
-                            >
-                              <div
-                                className={[
-                                  "absolute inset-x-0 top-0 h-1",
-                                  isRunning ? "animate-pulse" : ""
-                                ].join(" ")}
-                                style={{ backgroundColor: color }}
-                              />
-                              <p className="line-clamp-2 text-[13px] font-semibold leading-5 text-[color:var(--text)]">
-                                {entry.task_title}
-                              </p>
-                              <p className="mt-1.5 flex items-center gap-2 text-[10px] text-[color:var(--muted)]">
-                                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-                                {entry.task_category}
-                                {isRunning ? (
-                                  <span className="rounded-full border border-[color:var(--accent)] bg-[color:var(--accent-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)]">
-                                    Live
-                                  </span>
-                                ) : null}
-                              </p>
-                              <div className="mt-auto flex items-end justify-end gap-2 pt-2 text-[11px] text-[color:var(--muted)]">
-                                <span>{isRunning ? formatClock(getRunningSeconds(entry.start_time, clientNowIso)) : formatEntryDuration(entry)}</span>
-                              </div>
-                              {isRunning ? (
-                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-                                  <div
-                                    className="h-full rounded-full"
-                                    style={{
-                                      width: "100%",
-                                      background: `linear-gradient(90deg, ${hexToRgba(color, 0.55)}, ${hexToRgba(color, 0.9)})`
-                                    }}
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
+                        {(groupedEntries[dayKey] ?? []).map(renderEntryCard)}
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
+
+            <div className="sm:hidden">
+              <div className="flex gap-2 overflow-x-auto border-b border-[color:var(--line)] bg-[color:var(--surface-strong)] px-4 py-3">
+                {weekDays.map((dayKey) => {
+                  const total = dayTotals.get(dayKey) ?? 0;
+                  const isActive = dayKey === selectedDayKey;
+                  const isToday = dayKey === todayKey;
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      onClick={() => setSelectedDayKey(dayKey)}
+                      className={[
+                        "flex shrink-0 flex-col items-center rounded-[14px] border px-3 py-2 text-xs transition",
+                        isActive
+                          ? "border-[color:var(--accent)] bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]"
+                          : "border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--muted)]",
+                        isToday && !isActive ? "ring-1 ring-[color:var(--accent)]/50" : ""
+                      ].join(" ")}
+                    >
+                      <span className="font-semibold text-[color:var(--text)]">{formatDayLabel(dayKey)}</span>
+                      <span className="mt-0.5 text-[10px]">{formatClock(total)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div ref={mobileScrollRef} className="max-h-[calc(100vh-420px)] overflow-auto">
+                <div className="grid grid-cols-[48px_1fr]">
+                  <div className="border-r border-[color:var(--line)]">
+                    {Array.from({ length: 24 }, (_, index) => index).map((hour) => (
+                      <div
+                        key={hour}
+                        className="flex h-16 items-start justify-end border-b border-[color:var(--line)] px-2 pt-2 text-[10px] text-[color:var(--muted)]"
+                      >
+                        {pad(hour)}:00
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className={[
+                      "relative min-h-[1536px] transition",
+                      selectedDayKey === todayKey
+                        ? "bg-[color:var(--accent-soft)]/6 shadow-[inset_0_0_0_1px_rgba(79,124,255,0.1)]"
+                        : ""
+                    ].join(" ")}
+                  >
+                    {selectedDayKey === todayKey ? renderNowLine() : null}
+                    {Array.from({ length: 24 }, (_, index) => index).map((index) => (
+                      <div key={index} className="h-16 border-b border-[color:var(--line)]" />
+                    ))}
+                    {selectedDayKey ? (groupedEntries[selectedDayKey] ?? []).map(renderEntryCard) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+            </>
           ) : viewMode === "list" ? (
             <div className="space-y-4 p-5 sm:p-6">
               {listWeekDays.map((dayKey) => {
