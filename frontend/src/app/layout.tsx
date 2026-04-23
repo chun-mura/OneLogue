@@ -3,19 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AppTimeProvider } from "@/components/app-time-provider";
+import { SiteNav } from "@/components/site-nav";
 import { getTokyoTodayDateString } from "@/lib/datetime";
 
 export const metadata: Metadata = {
   title: "OneLogue",
   description: "Focused task manager with exclusive timer"
 };
-
-const navItems = [
-  { href: "/", label: "作業場" },
-  { href: "/time-entries", label: "時間ログ" },
-  { href: "/categories", label: "カテゴリ" },
-  { href: "/dashboard", label: "集計" }
-];
 
 export default function RootLayout({
   children
@@ -35,7 +29,7 @@ export default function RootLayout({
         <AppTimeProvider initialTodayKey={initialTodayKey} initialNowIso={initialNowIso}>
           <div className="relative min-h-screen overflow-hidden">
             <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-white/5 to-transparent" />
-            <header className="relative z-10">
+            <header className="relative z-50">
               <div className="mx-auto flex max-w-[1800px] items-center justify-between px-5 py-4 sm:px-6 lg:px-8">
                 <Link href="/" className="flex items-center gap-3">
                   <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] text-sm font-bold tracking-[0.2em] text-[color:var(--accent)] shadow-[var(--shadow)]">
@@ -51,17 +45,7 @@ export default function RootLayout({
                   </div>
                 </Link>
 
-                <nav className="hidden items-center gap-2 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-soft)] p-1.5 shadow-[var(--shadow)] backdrop-blur md:flex">
-                  {navItems.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="rounded-full px-4 py-2 text-sm font-semibold text-[color:var(--muted)] hover:bg-white/10 hover:text-[color:var(--text)]"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </nav>
+                <SiteNav />
               </div>
             </header>
 
