@@ -44,11 +44,6 @@ function splitDateTimeLocal(value: string): { date: string; time: string } {
   return { date, time: time.slice(0, 5) };
 }
 
-function splitTokyoDateTimeLocal(value: string | null | undefined): { date: string; time: string } {
-  if (!value) return { date: "", time: "" };
-  return splitDateTimeLocal(toTokyoDateTimeLocalValue(value));
-}
-
 function mergeDateTimeLocal(date: string, time: string): string {
   if (!date) return "";
   return `${date}T${time || "00:00"}`;
@@ -355,10 +350,24 @@ function TimerPopoverField({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [monthKey, setMonthKey] = useState("");
+  const [startDraft, setStartDraft] = useState("");
+  const [endDraft, setEndDraft] = useState("");
 
   const isRunning = Boolean(runningEntryStartValue);
-  const startSplit = splitTokyoDateTimeLocal(isRunning ? runningEntryStartValue ?? startValue : startValue);
-  const endSplit = splitTokyoDateTimeLocal(isRunning ? nowIso ?? endValue : endValue);
+
+  const sourceStart = isRunning
+    ? runningEntryStartValue
+      ? toTokyoDateTimeLocalValue(runningEntryStartValue)
+      : ""
+    : startValue;
+  const sourceEnd = isRunning
+    ? nowIso
+      ? toTokyoDateTimeLocalValue(nowIso)
+      : ""
+    : endValue;
+
+  const startSplit = splitDateTimeLocal(startDraft);
+  const endSplit = isRunning ? splitDateTimeLocal(sourceEnd) : splitDateTimeLocal(endDraft);
   const selectedDateKey = startSplit.date || endSplit.date || "";
   const visibleMonthKey = monthKey || getMonthStartKey(selectedDateKey || todayKey);
   const calendarDays = useMemo(() => buildMonthGrid(visibleMonthKey), [visibleMonthKey]);
@@ -384,26 +393,42 @@ function TimerPopoverField({
   }, []);
 
   useEffect(() => {
-    if (!open || monthKey) return;
-    setMonthKey(getMonthStartKey(selectedDateKey || todayKey));
-  }, [monthKey, open, selectedDateKey, todayKey]);
-
-  useEffect(() => {
-    if (!open || isRunning) return;
-    if (startSplit.date || endSplit.date) return;
-    const current = nowIso ?? new Date().toISOString();
-    const currentValue = toTokyoDateTimeLocalValue(current);
-    onStartChange(currentValue);
-    onEndChange(currentValue);
-  }, [endSplit.date, isRunning, nowIso, onEndChange, onStartChange, open, startSplit.date]);
+    if (!open) {
+      setMonthKey("");
+      return;
+    }
+    let seedStart = sourceStart;
+    let seedEnd = sourceEnd;
+    if (!isRunning && !seedStart && !seedEnd) {
+      const current = nowIso ?? new Date().toISOString();
+      const currentValue = toTokyoDateTimeLocalValue(current);
+      seedStart = currentValue;
+      seedEnd = currentValue;
+    }
+    setStartDraft(seedStart);
+    setEndDraft(seedEnd);
+    setMonthKey(getMonthStartKey(splitDateTimeLocal(seedStart).date || splitDateTimeLocal(seedEnd).date || todayKey));
+  }, [open]);
 
   function setDate(nextDateKey: string) {
-    const nextStart = mergeDateTimeLocal(nextDateKey, startSplit.time || "00:00");
-    onStartChange(nextStart);
+    setStartDraft((prev) => mergeDateTimeLocal(nextDateKey, splitDateTimeLocal(prev).time || "00:00"));
     if (!isRunning) {
-      const nextEnd = mergeDateTimeLocal(nextDateKey, endSplit.time || startSplit.time || "00:00");
-      onEndChange(nextEnd);
+      setEndDraft((prev) => {
+        const prevSplit = splitDateTimeLocal(prev);
+        const startSplitNow = splitDateTimeLocal(startDraft);
+        return mergeDateTimeLocal(nextDateKey, prevSplit.time || startSplitNow.time || "00:00");
+      });
     }
+  }
+
+  function handleSave() {
+    if (startDraft && startDraft !== sourceStart) {
+      onStartChange(startDraft);
+    }
+    if (!isRunning && endDraft && endDraft !== sourceEnd) {
+      onEndChange(endDraft);
+    }
+    setOpen(false);
   }
 
   return (
@@ -443,7 +468,9 @@ function TimerPopoverField({
                   step="60"
                   className="min-w-0 flex-1 bg-transparent text-xl font-semibold tracking-[-0.04em] text-[color:var(--text)] outline-none"
                   value={startSplit.time}
-                  onChange={(event) => onStartChange(mergeDateTimeLocal(startSplit.date, event.target.value))}
+                  onChange={(event) =>
+                    setStartDraft(mergeDateTimeLocal(startSplit.date || todayKey, event.target.value))
+                  }
                 />
                 <button
                   type="button"
@@ -476,7 +503,9 @@ function TimerPopoverField({
                   value={endSplit.time}
                   onChange={(event) => {
                     if (isRunning) return;
-                    onEndChange(mergeDateTimeLocal(endSplit.date || startSplit.date, event.target.value));
+                    setEndDraft(
+                      mergeDateTimeLocal(endSplit.date || startSplit.date || todayKey, event.target.value)
+                    );
                   }}
                 />
               </div>
@@ -537,6 +566,23 @@ function TimerPopoverField({
                 );
               })}
             </div>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+              onClick={() => setOpen(false)}
+            >
+              閉じる
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)]"
+              onClick={handleSave}
+            >
+              保存
+            </button>
           </div>
         </div>
       ) : null}
@@ -612,6 +658,13 @@ export default function TimeEntriesPage() {
     setManualInitialized(true);
   }, [clientNowIso, isMounted, manualInitialized]);
 
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const activeTask = tasks.find((task) => task.id === activeTaskId);
+    if (!activeTask) return;
+    setQuickTaskId((current) => (current === String(activeTaskId) ? current : String(activeTaskId)));
+  }, [activeTaskId, tasks]);
+
   const quickTask = useMemo(
     () => tasks.find((task) => task.id === Number(quickTaskId)) ?? null,
     [quickTaskId, tasks]
@@ -631,6 +684,8 @@ export default function TimeEntriesPage() {
     if (!weekStart) return [];
     return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   }, [weekStart]);
+
+  const listWeekDays = useMemo(() => [...weekDays].reverse(), [weekDays]);
 
   const groupedEntries = useMemo(() => splitByDay(weekEntries, weekStart), [weekEntries, weekStart]);
 
@@ -761,7 +816,7 @@ export default function TimeEntriesPage() {
       end_time: entry.end_time
     });
     setEditStart(toTokyoDateTimeLocalValue(entry.start_time));
-    setEditEnd(toTokyoDateTimeLocalValue(entry.end_time ?? (clientNowIso || entry.start_time)));
+    setEditEnd(entry.end_time ? toTokyoDateTimeLocalValue(entry.end_time) : "");
   }
 
   async function handleSaveEntry() {
@@ -770,10 +825,14 @@ export default function TimeEntriesPage() {
     setSaving(true);
     setError("");
     try {
-      await api.updateTimeEntry(editing.id, {
-        start_time: parseTokyoDateTimeLocal(editStart),
-        end_time: editEnd ? parseTokyoDateTimeLocal(editEnd) : undefined
-      });
+      const payload: { start_time: string; end_time?: string } = {
+        start_time: parseTokyoDateTimeLocal(editStart)
+      };
+      if (editing.end_time !== null && editEnd) {
+        payload.end_time = parseTokyoDateTimeLocal(editEnd);
+      }
+
+      await api.updateTimeEntry(editing.id, payload);
       setEditing(null);
       setEditStart("");
       setEditEnd("");
@@ -816,6 +875,8 @@ export default function TimeEntriesPage() {
     [tasks]
   );
 
+  const isEditingRunningEntry = editing?.end_time === null;
+
   const mainView = (
     <section className="overflow-hidden rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] shadow-[var(--shadow)]">
       <div className="border-b border-[color:var(--line)] px-5 py-5 sm:px-6">
@@ -852,7 +913,23 @@ export default function TimeEntriesPage() {
               className="min-w-0 flex-1"
               startValue={manualStart}
               endValue={manualEnd}
-              onStartChange={setManualStart}
+              onStartChange={(next) => {
+                if (activeRunningEntry) {
+                  if (!next) return;
+                  const iso = parseTokyoDateTimeLocal(next);
+                  if (!iso) return;
+                  void (async () => {
+                    try {
+                      await api.updateTimeEntry(activeRunningEntry.id, { start_time: iso });
+                      await refresh();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "開始時間の更新に失敗しました");
+                    }
+                  })();
+                } else {
+                  setManualStart(next);
+                }
+              }}
               onEndChange={setManualEnd}
               durationLabel={activeRunningEntry ? formatClock(activeTimerSeconds) : formatClock(getDurationSeconds(manualStart, manualEnd))}
               runningEntryStartValue={activeRunningEntry?.start_time ?? null}
@@ -1161,7 +1238,7 @@ export default function TimeEntriesPage() {
             </div>
           ) : viewMode === "list" ? (
             <div className="space-y-4 p-5 sm:p-6">
-              {weekDays.map((dayKey) => {
+              {listWeekDays.map((dayKey) => {
                 const dayEntries = groupedEntries[dayKey] ?? [];
                 if (dayEntries.length === 0) return null;
                 const total = dayTotals.get(dayKey) ?? 0;
@@ -1423,7 +1500,8 @@ export default function TimeEntriesPage() {
                 label="終了時刻"
                 value={editEnd}
                 onChange={setEditEnd}
-                placeholder={editing.end_time === null ? "現在時刻を基準に修正" : "日時を選択"}
+                disabled={isEditingRunningEntry}
+                placeholder={isEditingRunningEntry ? "進行中" : "日時を選択"}
               />
             </div>
 
@@ -1445,7 +1523,7 @@ export default function TimeEntriesPage() {
               </button>
               <button
                 type="button"
-                disabled={saving || !editStart || !editEnd}
+                disabled={saving || !editStart || (!isEditingRunningEntry && !editEnd)}
                 className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[color:var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => void handleSaveEntry()}
               >

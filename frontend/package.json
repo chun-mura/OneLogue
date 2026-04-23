@@ -2,14 +2,13 @@
   "name": "one-logue-frontend",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": "20.x"
-  },
+  "packageManager": "bun@1.3.12",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint ."
+    "dev": "bunx --bun next dev",
+    "build": "bunx --bun next build",
+    "start": "bunx --bun next start",
+    "lint": "bunx --bun --no-install eslint .",
+    "typecheck": "bunx --bun --no-install tsc --noEmit --pretty false"
   },
   "dependencies": {
     "next": "15.3.1",

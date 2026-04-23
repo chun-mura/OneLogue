@@ -35,6 +35,13 @@ cd backend
 python -m pytest -q
 ```
 
+```bash
+cd frontend
+bun install
+bun run lint
+bun run typecheck
+```
+
 ## 既知制約
 
 - SQLite 前提の単一ユーザーMVP
