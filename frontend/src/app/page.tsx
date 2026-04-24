@@ -1,6 +1,16 @@
 "use client";
 
-import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import {
+  FormEvent,
+  RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import Link from "next/link";
 
 import { formatSeconds, useTimer } from "@/hooks/useTimer";
@@ -41,7 +51,60 @@ type DuePickerMode = "create" | "task";
 type DuePickerPosition = {
   top: number;
   left: number;
+  maxHeight?: number;
 };
+
+function taskDuePickerFixedStyle(position: DuePickerPosition | null): CSSProperties | undefined {
+  if (!position) return undefined;
+  return {
+    top: position.top,
+    left: position.left,
+    ...(position.maxHeight != null
+      ? { maxHeight: position.maxHeight, overflowY: "auto" as const }
+      : {})
+  };
+}
+
+type AnchoredMenuPlacement = {
+  side: "below" | "above";
+  maxHeight?: number;
+};
+
+const defaultAnchoredMenuPlacement: AnchoredMenuPlacement = { side: "below" };
+
+function computeAnchoredMenuPlacement(
+  triggerEl: HTMLElement,
+  menuScrollHeight: number,
+  options?: { gap?: number; margin?: number }
+): AnchoredMenuPlacement {
+  const gap = options?.gap ?? 8;
+  const margin = options?.margin ?? 8;
+  const tr = triggerEl.getBoundingClientRect();
+  const belowSpace = window.innerHeight - tr.bottom - gap - margin;
+  const aboveSpace = tr.top - gap - margin;
+
+  if (menuScrollHeight <= belowSpace) {
+    return { side: "below" };
+  }
+  if (menuScrollHeight <= aboveSpace) {
+    return { side: "above" };
+  }
+  if (aboveSpace >= belowSpace) {
+    return { side: "above", maxHeight: Math.max(80, aboveSpace) };
+  }
+  return { side: "below", maxHeight: Math.max(80, belowSpace) };
+}
+
+function anchoredDropdownPositionClasses(placement: AnchoredMenuPlacement): string {
+  return placement.side === "below"
+    ? "absolute left-0 top-[calc(100%+8px)] z-20"
+    : "absolute left-0 bottom-[calc(100%+8px)] z-20 top-auto";
+}
+
+function anchoredDropdownMaxHeightStyle(placement: AnchoredMenuPlacement): CSSProperties | undefined {
+  if (placement.maxHeight == null) return undefined;
+  return { maxHeight: placement.maxHeight, overflowY: "auto" as const };
+}
 
 const initialForm: TaskFormState = {
   title: "",
@@ -540,6 +603,7 @@ function TaskRow({
   categoryOptions,
   categoryMenuRef,
   categoryTriggerRef,
+  categoryMenuPlacement,
   todayKey,
   nowIso,
   onEditCategoryStart,
@@ -566,6 +630,7 @@ function TaskRow({
   categoryOptions: string[];
   categoryMenuRef: RefObject<HTMLDivElement | null>;
   categoryTriggerRef: RefObject<HTMLButtonElement | null>;
+  categoryMenuPlacement: AnchoredMenuPlacement;
   todayKey: string;
   nowIso: string;
   onEditCategoryStart: () => void;
@@ -675,7 +740,8 @@ function TaskRow({
             {isEditingCategory ? (
               <div
                 ref={categoryMenuRef}
-                className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                className={`${anchoredDropdownPositionClasses(categoryMenuPlacement)} min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                style={anchoredDropdownMaxHeightStyle(categoryMenuPlacement)}
               >
                 {categoryOptions.map((category) => (
                   <button
@@ -767,8 +833,16 @@ export default function HomePage() {
   const [editingCategoryTaskId, setEditingCategoryTaskId] = useState<number | null>(null);
   const [editingCategoryValue, setEditingCategoryValue] = useState("");
   const [createCategoryMenuOpen, setCreateCategoryMenuOpen] = useState(false);
+  const [createCategoryMenuPlacement, setCreateCategoryMenuPlacement] =
+    useState<AnchoredMenuPlacement>(defaultAnchoredMenuPlacement);
   const [categoryFilterMenuOpen, setCategoryFilterMenuOpen] = useState(false);
+  const [categoryFilterMenuPlacement, setCategoryFilterMenuPlacement] =
+    useState<AnchoredMenuPlacement>(defaultAnchoredMenuPlacement);
   const [taskSortMenuOpen, setTaskSortMenuOpen] = useState(false);
+  const [taskSortMenuPlacement, setTaskSortMenuPlacement] =
+    useState<AnchoredMenuPlacement>(defaultAnchoredMenuPlacement);
+  const [editingCategoryMenuPlacement, setEditingCategoryMenuPlacement] =
+    useState<AnchoredMenuPlacement>(defaultAnchoredMenuPlacement);
   const [animatingCompleteTaskIds, setAnimatingCompleteTaskIds] = useState<number[]>([]);
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [taskSort, setTaskSort] = useState<TaskSort>("dueAsc");
@@ -1152,11 +1226,118 @@ export default function HomePage() {
     );
     setDuePickerPosition({
       top: rect.bottom + 10,
-      left
+      left,
+      maxHeight: undefined
     });
     setTimePickerOpen(false);
     setDuePickerOpen(true);
   }
+
+  useLayoutEffect(() => {
+    if (!duePickerOpen || duePickerMode !== "task") return;
+
+    function place() {
+      const anchor = dueEditTriggerRef.current;
+      const picker = duePickerRef.current;
+      if (!anchor || !picker) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const pickerWidth = 380;
+      const margin = 12;
+      const gap = 10;
+      const viewportBottom = window.innerHeight - margin;
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - pickerWidth - margin));
+
+      const height = picker.getBoundingClientRect().height;
+      let top = rect.bottom + gap;
+      let maxHeight: number | undefined;
+
+      if (top + height > viewportBottom) {
+        const aboveTop = rect.top - gap - height;
+        if (aboveTop >= margin) {
+          top = aboveTop;
+        } else {
+          top = margin;
+          maxHeight = Math.max(120, viewportBottom - margin);
+        }
+      }
+
+      if (top < margin) {
+        top = margin;
+      }
+
+      setDuePickerPosition((prev) => {
+        if (
+          prev &&
+          Math.abs(prev.top - top) < 1 &&
+          Math.abs(prev.left - left) < 1 &&
+          prev.maxHeight === maxHeight
+        ) {
+          return prev;
+        }
+        return { top, left, maxHeight };
+      });
+    }
+
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [duePickerOpen, duePickerMode, timePickerOpen, calendarMonth, editingDueTaskId]);
+
+  useLayoutEffect(() => {
+    function mergePlacement(prev: AnchoredMenuPlacement, next: AnchoredMenuPlacement): AnchoredMenuPlacement {
+      if (prev.side === next.side && prev.maxHeight === next.maxHeight) return prev;
+      return next;
+    }
+
+    function placeAll() {
+      if (createCategoryMenuOpen) {
+        const trigger = createCategoryTriggerRef.current;
+        const menu = createCategoryMenuRef.current;
+        if (trigger && menu) {
+          const next = computeAnchoredMenuPlacement(trigger, menu.scrollHeight);
+          setCreateCategoryMenuPlacement((prev) => mergePlacement(prev, next));
+        }
+      }
+
+      if (categoryFilterMenuOpen) {
+        const trigger = categoryFilterTriggerRef.current;
+        const menu = categoryFilterMenuRef.current;
+        if (trigger && menu) {
+          const next = computeAnchoredMenuPlacement(trigger, menu.scrollHeight);
+          setCategoryFilterMenuPlacement((prev) => mergePlacement(prev, next));
+        }
+      }
+
+      if (taskSortMenuOpen) {
+        const trigger = taskSortTriggerRef.current;
+        const menu = taskSortMenuRef.current;
+        if (trigger && menu) {
+          const next = computeAnchoredMenuPlacement(trigger, menu.scrollHeight);
+          setTaskSortMenuPlacement((prev) => mergePlacement(prev, next));
+        }
+      }
+
+      if (editingCategoryTaskId) {
+        const trigger = categoryTriggerRef.current;
+        const menu = categoryMenuRef.current;
+        if (trigger && menu) {
+          const next = computeAnchoredMenuPlacement(trigger, menu.scrollHeight);
+          setEditingCategoryMenuPlacement((prev) => mergePlacement(prev, next));
+        }
+      }
+    }
+
+    placeAll();
+    window.addEventListener("resize", placeAll);
+    return () => window.removeEventListener("resize", placeAll);
+  }, [
+    createCategoryMenuOpen,
+    categoryFilterMenuOpen,
+    taskSortMenuOpen,
+    editingCategoryTaskId,
+    categories
+  ]);
 
   const currentDueDate = duePickerMode === "create" ? form.due_at : editingDueValue;
   const currentDueTime = duePickerMode === "create" ? form.due_time : editingDueTimeValue;
@@ -1399,11 +1580,7 @@ export default function HomePage() {
               className={`z-30 w-full max-w-[380px] rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 shadow-[var(--shadow)] ${
                 duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
               }`}
-              style={
-                duePickerMode === "task"
-                  ? { top: duePickerPosition?.top, left: duePickerPosition?.left }
-                  : undefined
-              }
+              style={duePickerMode === "task" ? taskDuePickerFixedStyle(duePickerPosition) : undefined}
             >
               <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-white/5 p-1">
                 <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-[color:var(--text)]">
@@ -1659,7 +1836,8 @@ export default function HomePage() {
               {taskSortMenuOpen ? (
                 <div
                   ref={taskSortMenuRef}
-                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                  className={`${anchoredDropdownPositionClasses(taskSortMenuPlacement)} min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                  style={anchoredDropdownMaxHeightStyle(taskSortMenuPlacement)}
                 >
                   {[
                     ["dueAsc", "期限が近い順"],
@@ -1708,7 +1886,8 @@ export default function HomePage() {
               {categoryFilterMenuOpen ? (
                 <div
                   ref={categoryFilterMenuRef}
-                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                  className={`${anchoredDropdownPositionClasses(categoryFilterMenuPlacement)} min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                  style={anchoredDropdownMaxHeightStyle(categoryFilterMenuPlacement)}
                 >
                   <button
                     type="button"
@@ -1848,7 +2027,8 @@ export default function HomePage() {
                   {createCategoryMenuOpen && categories.length > 0 ? (
                     <div
                       ref={createCategoryMenuRef}
-                      className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                      className={`${anchoredDropdownPositionClasses(createCategoryMenuPlacement)} min-w-[160px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                      style={anchoredDropdownMaxHeightStyle(createCategoryMenuPlacement)}
                     >
                       {categories.map((category) => (
                         <button
@@ -1901,11 +2081,7 @@ export default function HomePage() {
               className={`z-30 w-full max-w-[380px] rounded-[24px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 shadow-[var(--shadow)] ${
                 duePickerMode === "task" ? "fixed" : "absolute right-0 top-[calc(100%+10px)]"
               }`}
-              style={
-                duePickerMode === "task"
-                  ? { top: duePickerPosition?.top, left: duePickerPosition?.left }
-                  : undefined
-              }
+              style={duePickerMode === "task" ? taskDuePickerFixedStyle(duePickerPosition) : undefined}
             >
               <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-white/5 p-1">
                 <button type="button" className="rounded-[12px] bg-white/8 px-4 py-2.5 text-sm font-medium text-[color:var(--text)]">
@@ -2161,7 +2337,8 @@ export default function HomePage() {
               {taskSortMenuOpen ? (
                 <div
                   ref={taskSortMenuRef}
-                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                  className={`${anchoredDropdownPositionClasses(taskSortMenuPlacement)} min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                  style={anchoredDropdownMaxHeightStyle(taskSortMenuPlacement)}
                 >
                   {[
                     ["dueAsc", "期限が近い順"],
@@ -2210,7 +2387,8 @@ export default function HomePage() {
               {categoryFilterMenuOpen ? (
                 <div
                   ref={categoryFilterMenuRef}
-                  className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]"
+                  className={`${anchoredDropdownPositionClasses(categoryFilterMenuPlacement)} min-w-[180px] rounded-[16px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] py-2 shadow-[var(--shadow)]`}
+                  style={anchoredDropdownMaxHeightStyle(categoryFilterMenuPlacement)}
                 >
                   <button
                     type="button"
@@ -2293,6 +2471,7 @@ export default function HomePage() {
                         categoryOptions={categories.map((category) => category.name)}
                         categoryMenuRef={categoryMenuRef}
                         categoryTriggerRef={categoryTriggerRef}
+                        categoryMenuPlacement={editingCategoryMenuPlacement}
                         todayKey={todayKey}
                         nowIso={nowIso}
                         onEditCategoryStart={() => {
@@ -2355,6 +2534,7 @@ export default function HomePage() {
                           categoryOptions={categories.map((category) => category.name)}
                           categoryMenuRef={categoryMenuRef}
                           categoryTriggerRef={categoryTriggerRef}
+                          categoryMenuPlacement={editingCategoryMenuPlacement}
                           todayKey={todayKey}
                           nowIso={nowIso}
                           onEditCategoryStart={() => {
@@ -2416,6 +2596,7 @@ export default function HomePage() {
                           categoryOptions={categories.map((category) => category.name)}
                           categoryMenuRef={categoryMenuRef}
                           categoryTriggerRef={categoryTriggerRef}
+                          categoryMenuPlacement={editingCategoryMenuPlacement}
                           todayKey={todayKey}
                           nowIso={nowIso}
                           onEditCategoryStart={() => {
@@ -2477,6 +2658,7 @@ export default function HomePage() {
                           categoryOptions={categories.map((category) => category.name)}
                           categoryMenuRef={categoryMenuRef}
                           categoryTriggerRef={categoryTriggerRef}
+                          categoryMenuPlacement={editingCategoryMenuPlacement}
                           todayKey={todayKey}
                           nowIso={nowIso}
                           onEditCategoryStart={() => {

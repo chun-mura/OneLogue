@@ -667,6 +667,20 @@ export default function TimeEntriesPage() {
     [activeTaskId, entries]
   );
 
+  useEffect(() => {
+    if (!quickTaskId) return;
+    const id = Number(quickTaskId);
+    if (!Number.isFinite(id)) return;
+    const task = tasks.find((t) => t.id === id);
+    if (!task) {
+      setQuickTaskId("");
+      return;
+    }
+    const isRunningThis = activeRunningEntry?.task_id === id;
+    if (isRunningThis) return;
+    if (task.status !== "pending") setQuickTaskId("");
+  }, [quickTaskId, tasks, activeRunningEntry]);
+
   const activeTimerSeconds =
     activeRunningEntry && clientNowIso
       ? getRunningSeconds(activeRunningEntry.start_time, clientNowIso)
@@ -787,15 +801,20 @@ export default function TimeEntriesPage() {
     }
   }
 
-  const quickTaskOptions = useMemo(
-    () =>
-      tasks.map((task) => ({
-        value: String(task.id),
-        label: task.title,
-        description: `${task.category} · ${toTaskStatusLabel(task.status)}`
-      })),
-    [tasks]
-  );
+  const quickTaskOptions = useMemo(() => {
+    const pending = tasks.filter((task) => task.status === "pending");
+    const activeId = activeRunningEntry?.task_id;
+    const orphanActive =
+      activeId != null && !pending.some((task) => task.id === activeId)
+        ? tasks.find((task) => task.id === activeId)
+        : undefined;
+    const list = orphanActive ? [...pending, orphanActive] : pending;
+    return list.map((task) => ({
+      value: String(task.id),
+      label: task.title,
+      description: `${task.category} · ${toTaskStatusLabel(task.status)}`
+    }));
+  }, [tasks, activeRunningEntry]);
 
   const isEditingRunningEntry = editing?.end_time === null;
 
@@ -908,8 +927,10 @@ export default function TimeEntriesPage() {
               value={quickTaskId}
               options={quickTaskOptions}
               onChange={setQuickTaskId}
-              placeholder={tasks.length === 0 ? "登録済みタスクがありません" : "タスクを選択"}
-              disabled={tasks.length === 0}
+              placeholder={
+                quickTaskOptions.length === 0 ? "未完了のタスクがありません" : "タスクを選択"
+              }
+              disabled={quickTaskOptions.length === 0}
               className="w-full h-12 [&>button]:h-full [&>button]:py-0"
             />
           </div>
