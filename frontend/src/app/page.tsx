@@ -732,7 +732,7 @@ function TaskRow({
             const link = parseExternalUrl(task.description);
             if (!link) {
               return (
-                <p className="mt-1 text-sm leading-5 text-[color:var(--muted)]">
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-[color:var(--muted)]">
                   {task.description}
                 </p>
               );
@@ -742,7 +742,7 @@ function TaskRow({
                 href={link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-flex text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
+                className="mt-1 inline-flex whitespace-pre-wrap text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
               >
                 {task.description}
               </a>
