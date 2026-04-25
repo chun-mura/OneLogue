@@ -38,6 +38,7 @@ import { useAppTime } from "@/components/app-time-provider";
 
 type TaskFormState = {
   title: string;
+  description: string;
   category: string;
   due_at: string;
   due_time: string;
@@ -106,8 +107,23 @@ function anchoredDropdownMaxHeightStyle(placement: AnchoredMenuPlacement): CSSPr
   return { maxHeight: placement.maxHeight, overflowY: "auto" as const };
 }
 
+function parseExternalUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 const initialForm: TaskFormState = {
   title: "",
+  description: "",
   category: "",
   due_at: "",
   due_time: "",
@@ -609,6 +625,7 @@ function TaskRow({
   onEditCategoryStart,
   onEditCategoryChange,
   onEditCategoryCommit,
+  onOpenEditModal,
   onToggleComplete,
   onDelete
 }: {
@@ -636,6 +653,7 @@ function TaskRow({
   onEditCategoryStart: () => void;
   onEditCategoryChange: (value: string) => void;
   onEditCategoryCommit: (value?: string) => void;
+  onOpenEditModal: () => void;
   onToggleComplete: () => void;
   onDelete?: () => void;
 }) {
@@ -709,6 +727,28 @@ function TaskRow({
             </span>
           ) : null}
         </div>
+        {task.description ? (
+          (() => {
+            const link = parseExternalUrl(task.description);
+            if (!link) {
+              return (
+                <p className="mt-1 text-sm leading-5 text-[color:var(--muted)]">
+                  {task.description}
+                </p>
+              );
+            }
+            return (
+              <a
+                href={link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
+              >
+                {task.description}
+              </a>
+            );
+          })()
+        ) : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
           <button
             type="button"
@@ -767,6 +807,16 @@ function TaskRow({
       </div>
 
       <div className="hidden items-center gap-2 opacity-0 transition group-hover:opacity-100 md:flex">
+        <button
+          type="button"
+          className="rounded-full bg-white/8 px-3 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenEditModal();
+          }}
+        >
+          編集
+        </button>
         {task.status === "pending" ? (
           isActive ? (
             <button
@@ -825,6 +875,9 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null);
+  const [editingTaskModalTarget, setEditingTaskModalTarget] = useState<Task | null>(null);
+  const [editingModalTitleValue, setEditingModalTitleValue] = useState("");
+  const [editingModalDescriptionValue, setEditingModalDescriptionValue] = useState("");
   const [editingTitleTaskId, setEditingTitleTaskId] = useState<number | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState("");
   const [editingDueTaskId, setEditingDueTaskId] = useState<number | null>(null);
@@ -1033,6 +1086,7 @@ export default function HomePage() {
     try {
       await api.createTask({
         title: form.title,
+        description: form.description.trim() || null,
         category: form.category,
         due_at: combineDueDateTime(form.due_at, form.due_time),
         status: form.status
@@ -1392,6 +1446,43 @@ export default function HomePage() {
     }
   }
 
+  function handleOpenTaskEditModal(task: Task) {
+    setEditingTaskModalTarget(task);
+    setEditingModalTitleValue(task.title);
+    setEditingModalDescriptionValue(task.description ?? "");
+  }
+
+  function handleCloseTaskEditModal() {
+    setEditingTaskModalTarget(null);
+    setEditingModalTitleValue("");
+    setEditingModalDescriptionValue("");
+  }
+
+  async function handleSaveTaskFromModal() {
+    if (!editingTaskModalTarget) return;
+
+    const nextTitle = editingModalTitleValue.trim();
+    if (!nextTitle) {
+      setError("タイトルは必須です");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await api.updateTask(editingTaskModalTarget.id, {
+        title: nextTitle,
+        description: editingModalDescriptionValue.trim() || null
+      });
+      handleCloseTaskEditModal();
+      await refreshTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "タスク更新に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const selectedDue = currentDueDate;
   const pendingCount = filteredPendingTasks.length;
 
@@ -1454,6 +1545,59 @@ export default function HomePage() {
           </div>
         </div>
       ) : null}
+      {editingTaskModalTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={handleCloseTaskEditModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-lg rounded-[28px] border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-6 shadow-[var(--shadow)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-[color:var(--text)]">タスクを編集</p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs font-medium text-[color:var(--muted)]">
+                タイトル
+                <input
+                  autoFocus
+                  value={editingModalTitleValue}
+                  onChange={(event) => setEditingModalTitleValue(event.target.value)}
+                  className="mt-1.5 w-full rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-medium text-[color:var(--muted)]">
+                説明（任意）
+                <textarea
+                  value={editingModalDescriptionValue}
+                  onChange={(event) => setEditingModalDescriptionValue(event.target.value)}
+                  rows={4}
+                  className="mt-1.5 w-full resize-y rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2 text-sm text-[color:var(--text)] focus:outline-none"
+                />
+              </label>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-full bg-white/8 px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-white/12"
+                onClick={handleCloseTaskEditModal}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--accent-strong)] disabled:opacity-50"
+                disabled={loading || !editingModalTitleValue.trim()}
+                onClick={() => void handleSaveTaskFromModal()}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {false && (
       <section className="rounded-[32px] border border-[color:var(--line)] bg-[color:var(--surface)] px-5 py-5 shadow-[var(--shadow)] sm:px-7 sm:py-5">
@@ -1502,6 +1646,24 @@ export default function HomePage() {
                   onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
                   placeholder="タスクを追加する"
                   className="min-w-0 flex-1 bg-transparent text-[17px] text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:outline-none"
+                />
+              </div>
+              <div className="md:w-[320px]">
+                <textarea
+                  value={form.description}
+                  onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="説明（任意）"
+                  rows={2}
+                  className="w-full resize-y rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2 text-sm text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:outline-none"
+                />
+              </div>
+              <div className="md:w-[320px]">
+                <textarea
+                  value={form.description}
+                  onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="説明（任意）"
+                  rows={2}
+                  className="w-full resize-y rounded-[14px] border border-[color:var(--line)] bg-[color:var(--bg-soft)] px-3 py-2 text-sm text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:outline-none"
                 />
               </div>
 
@@ -2480,6 +2642,7 @@ export default function HomePage() {
                         }}
                         onEditCategoryChange={setEditingCategoryValue}
                         onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                        onOpenEditModal={() => handleOpenTaskEditModal(task)}
                         onToggleComplete={() => void handleComplete(task.id)}
                       />
                     </li>
@@ -2543,6 +2706,7 @@ export default function HomePage() {
                           }}
                           onEditCategoryChange={setEditingCategoryValue}
                           onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onOpenEditModal={() => handleOpenTaskEditModal(task)}
                           onToggleComplete={() => void handleComplete(task.id)}
                         />
                       </li>
@@ -2605,6 +2769,7 @@ export default function HomePage() {
                           }}
                           onEditCategoryChange={setEditingCategoryValue}
                           onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onOpenEditModal={() => handleOpenTaskEditModal(task)}
                           onToggleComplete={() => void handleComplete(task.id)}
                         />
                       </li>
@@ -2667,6 +2832,7 @@ export default function HomePage() {
                           }}
                           onEditCategoryChange={setEditingCategoryValue}
                           onEditCategoryCommit={(value) => void handleSaveTaskCategory(task, value)}
+                          onOpenEditModal={() => handleOpenTaskEditModal(task)}
                           onToggleComplete={() => void handleReopen(task.id)}
                           onDelete={() => setDeleteConfirmTask(task)}
                         />

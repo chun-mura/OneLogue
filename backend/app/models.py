@@ -21,6 +21,7 @@ class Task(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
     category: Mapped[str] = mapped_column(String, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

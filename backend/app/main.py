@@ -23,6 +23,8 @@ def ensure_task_columns() -> None:
     with engine.begin() as connection:
         if "due_at" not in column_names:
             connection.execute(text("ALTER TABLE tasks ADD COLUMN due_at DATETIME"))
+        if "description" not in column_names:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN description VARCHAR"))
 
 
 def sync_categories_from_tasks() -> None:

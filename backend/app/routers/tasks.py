@@ -27,10 +27,18 @@ def _ensure_category_exists(db: Session, category_name: str) -> str:
     return category.name
 
 
+def _normalize_description(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> TaskRead:
     data = payload.model_dump()
     data["category"] = _ensure_category_exists(db, payload.category)
+    data["description"] = _normalize_description(payload.description)
     task = Task(**data)
     db.add(task)
     db.commit()
@@ -63,6 +71,8 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     data = payload.model_dump(exclude_unset=True)
     if "category" in data:
         data["category"] = _ensure_category_exists(db, data["category"])
+    if "description" in data:
+        data["description"] = _normalize_description(data["description"])
     new_status = data.get("status")
     if new_status in ("completed", "archived"):
         stop_task_timer_if_running(db, task_id)

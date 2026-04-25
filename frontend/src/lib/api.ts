@@ -9,6 +9,7 @@ export type Category = {
 export type Task = {
   id: number;
   title: string;
+  description: string | null;
   category: string;
   due_at: string | null;
   status: TaskStatus;
