@@ -659,7 +659,7 @@ function TaskRow({
 }) {
   return (
     <div
-      className={`group flex items-center gap-4 rounded-[20px] border border-transparent px-4 py-3.5 text-[color:var(--text)] transition ${
+      className={`group flex min-w-0 items-center gap-4 rounded-[20px] border border-transparent px-4 py-3.5 text-[color:var(--text)] transition ${
         isAnimatingComplete
           ? "scale-[0.992] bg-emerald-500/[0.08]"
           : isActive
@@ -690,7 +690,7 @@ function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {isEditingTitle ? (
             <input
               autoFocus
@@ -714,7 +714,7 @@ function TaskRow({
             <button
               type="button"
               onClick={onEditTitleStart}
-              className={`truncate text-left text-[16px] transition hover:opacity-80 ${
+              className={`min-w-0 flex-1 truncate text-left text-[16px] transition hover:opacity-80 ${
                 task.status === "completed" ? "text-[color:var(--muted)] line-through" : "text-[color:var(--text)]"
               }`}
             >
@@ -732,7 +732,7 @@ function TaskRow({
             const link = parseExternalUrl(task.description);
             if (!link) {
               return (
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-[color:var(--muted)]">
+                <p className="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-5 text-[color:var(--muted)]">
                   {task.description}
                 </p>
               );
@@ -742,7 +742,7 @@ function TaskRow({
                 href={link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-flex whitespace-pre-wrap text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
+                className="mt-1 block min-w-0 max-w-full whitespace-pre-wrap break-all text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
               >
                 {task.description}
               </a>
@@ -2605,7 +2605,7 @@ export default function HomePage() {
             />
             {!collapsedSections.overdue && groupedTasks.overdue.length > 0 ? (
               <div id="task-section-overdue">
-                <ul className="divide-y divide-white/[0.03]">
+                <ul className="min-w-0 divide-y divide-white/[0.03]">
                   {groupedTasks.overdue.map((task) => (
                     <li key={task.id}>
                       <TaskRow
@@ -2669,7 +2669,7 @@ export default function HomePage() {
                 {groupedTasks.today.length === 0 ? (
                   <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今日のタスクはありません</div>
                 ) : (
-                  <ul className="divide-y divide-white/[0.03]">
+                  <ul className="min-w-0 divide-y divide-white/[0.03]">
                     {groupedTasks.today.map((task) => (
                       <li key={task.id}>
                         <TaskRow
@@ -2732,7 +2732,7 @@ export default function HomePage() {
                 {groupedTasks.upcoming.length === 0 ? (
                   <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">今後のタスクはありません</div>
                 ) : (
-                  <ul className="divide-y divide-white/[0.03]">
+                  <ul className="min-w-0 divide-y divide-white/[0.03]">
                     {groupedTasks.upcoming.map((task) => (
                       <li key={task.id}>
                         <TaskRow
@@ -2795,7 +2795,7 @@ export default function HomePage() {
                 {groupedTasks.completed.length === 0 ? (
                   <div className="rounded-[22px] px-4 py-8 text-sm text-[color:var(--muted)]">完了したタスクはありません</div>
                 ) : (
-                  <ul className="divide-y divide-white/[0.03]">
+                  <ul className="min-w-0 divide-y divide-white/[0.03]">
                     {groupedTasks.completed.map((task) => (
                       <li key={task.id}>
                         <TaskRow
