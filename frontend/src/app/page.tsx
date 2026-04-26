@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   FormEvent,
   RefObject,
@@ -119,6 +119,41 @@ function parseExternalUrl(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+function renderTaskDescription(description: string): ReactNode {
+  const lines = description.split(/\r?\n/);
+  return (
+    <div className="mt-1 min-w-0 max-w-full text-sm leading-5">
+      {lines.map((line, index) => {
+        if (line.trim() === "") {
+          return <div key={index} className="min-h-[1lh]" aria-hidden="true" />;
+        }
+        const href = parseExternalUrl(line);
+        if (href !== null) {
+          return (
+            <a
+              key={index}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block min-w-0 max-w-full break-all text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
+            >
+              {line.trim()}
+            </a>
+          );
+        }
+        return (
+          <span
+            key={index}
+            className="block min-w-0 max-w-full whitespace-pre-wrap break-words text-[color:var(--muted)]"
+          >
+            {line}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 const initialForm: TaskFormState = {
@@ -727,28 +762,7 @@ function TaskRow({
             </span>
           ) : null}
         </div>
-        {task.description ? (
-          (() => {
-            const link = parseExternalUrl(task.description);
-            if (!link) {
-              return (
-                <p className="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-5 text-[color:var(--muted)]">
-                  {task.description}
-                </p>
-              );
-            }
-            return (
-              <a
-                href={link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 block min-w-0 max-w-full whitespace-pre-wrap break-all text-sm leading-5 text-[color:var(--accent-strong)] underline underline-offset-2 hover:opacity-80"
-              >
-                {task.description}
-              </a>
-            );
-          })()
-        ) : null}
+        {task.description ? renderTaskDescription(task.description) : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
           <button
             type="button"
